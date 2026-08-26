@@ -4374,7 +4374,7 @@
       document.getElementById("screen-" + screen).classList.add("active");
       if (screen === "jefe") renderJefe("general");
       if (screen === "tecnico") renderTecnico();
-      if (screen === "operario") renderOperario();
+      if (screen === "operario") prepararOperario();
       if (screen === "tecnico-login") { tecLoginStep = "list"; tecLoginTecnicoId = null; prepararTecLogin(); }
       if (screen === "supervisor") renderSupervisorHistorial();
       if (screen === "gerencia") renderGerencia();
@@ -4825,6 +4825,35 @@
       closeDetail();
     }
 
+    /**
+     * El Operario no inicia sesión, así que este dispositivo nunca tiene una
+     * sesión de Jefe/Técnico cargada en memoria (o la tuvo antes y se
+     * perdió al cerrar sesión) — sin esto, `db.lineas` siempre estaría vacío
+     * y la pantalla diría "dispositivo no configurado" aunque la planta sí
+     * esté guardada. Se traen las líneas con el token de quiosco (no
+     * requiere login de persona) y recién ahí se renderiza.
+     */
+    async function prepararOperario() {
+      ensureDb();
+      opState = { linea: null, problema: null };
+      const plantaId = getPlantaId();
+      if (!plantaId) { renderOperario(); return; }
+      if (!db.lineas || db.lineas.length === 0) {
+        document.getElementById("op-lines").innerHTML = `<div class="empty-lineas">Cargando líneas…</div>`;
+        document.getElementById("op-problems").innerHTML = "";
+        try {
+          await asegurarTokenDispositivo(plantaId);
+          const lineas = await apiFetch("/lineas/planta/" + plantaId + "/kiosco", {
+            headers: { "X-Ingenova-Device": getDispositivoToken() || "" },
+          });
+          db.lineas = lineas.map(l => ({ id: l.id, nombre: l.nombre, colorHex: l.colorHex }));
+        } catch (e) {
+          document.getElementById("op-lines").innerHTML = `<div class="empty-lineas">No se pudo cargar la lista de líneas. Revisa tu conexión e inténtalo de nuevo.</div>`;
+          return;
+        }
+      }
+      renderOperario();
+    }
     function renderOperario() {
       ensureDb();
       opState = { linea: null, problema: null };
