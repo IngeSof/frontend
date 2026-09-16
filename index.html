@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ingenova · Mantención</title>
+  <link rel="icon" id="app-favicon" href="">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link
     href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
@@ -3766,7 +3767,7 @@
         packing: { id: planta.id, nombre: (planta.cliente && planta.cliente.nombre) || "", direccion: planta.direccion || "" },
         plantas: plantas,
         cliente: cliente,
-        config: { jornadaSemanal: planta.jornadaSemanal || DEFAULT_JORNADA_SEMANAL, ordenLineas: lineas.map(l => l.id) },
+        config: { jornadaSemanal: planta.jornadaSemanal || DEFAULT_JORNADA_SEMANAL, ordenLineas: lineas.map(l => l.id), plantaNumero: planta.numero || null },
         lineas: lineas.map(l => ({ id: l.id, nombre: l.nombre, colorHex: l.colorHex, anioFabricacion: l.anioFabricacion || null, fabricante: l.fabricante || null, numeroSerie: l.numeroSerie || null })),
         unidades: lineas.flatMap(l => (l.unidades || []).map(u => ({ id: u.id, lineaId: l.id, nombre: u.nombre }))),
         especialidades: especialidades,
@@ -3999,6 +4000,7 @@
         : (range.today > plannedEnd ? Math.round((range.today - plannedEnd) / 86400000) : 0);
 
       return {
+        folio: o.folio || null,
         unidadNombre: unidad ? unidad.nombre : "Unidad eliminada",
         lineaNombre: linea ? linea.nombre : "-",
         lineaColor: linea ? linea.colorHex : "#999",
@@ -4015,7 +4017,7 @@
         : "";
       return `<div class="gantt-row">
     <div class="gantt-row-label">
-      <span class="u">${row.unidadNombre}</span>
+      <span class="u">${formatFolio("P", db.config.plantaNumero, row.folio) ? formatFolio("P", db.config.plantaNumero, row.folio) + " · " : ""}${row.unidadNombre}</span>
       <span class="l"><span class="side-dot" style="background:${row.lineaColor}"></span>${row.lineaNombre}${delayTxt}</span>
     </div>
     <div class="gantt-track">
@@ -4200,6 +4202,8 @@
       const src = logoUrl || logoIngenovaDefault;
       if (!src) return;
       document.querySelectorAll(".brand-mark").forEach((img) => { img.src = src; });
+      const favicon = document.getElementById("app-favicon");
+      if (favicon) favicon.href = src;
     }
     let currentTaskIdx = null;
     let opState = { linea: null, problema: null };
@@ -4544,7 +4548,7 @@
         alertPanel.style.display = "block";
         document.getElementById("alert-rows").innerHTML = correctivasActivas.map(c => `
       <div class="alert-row">
-        <div class="txt"><strong>${formatFolio(c.folio) ? formatFolio(c.folio) + " \u00b7 " : ""}${(lineaById(c.lineaId) ? lineaById(c.lineaId).nombre : c.lineaId).replace(/</g, "&lt;")} \u00b7 ${(c.problema || "").replace(/</g, "&lt;")}</strong><span>${(c.observacion || "Sin observaci\u00f3n").replace(/</g, "&lt;")}</span></div>
+        <div class="txt"><strong>${formatFolio("C", db.config.plantaNumero, c.folio) ? formatFolio("C", db.config.plantaNumero, c.folio) + " \u00b7 " : ""}${(lineaById(c.lineaId) ? lineaById(c.lineaId).nombre : c.lineaId).replace(/</g, "&lt;")} \u00b7 ${(c.problema || "").replace(/</g, "&lt;")}</strong><span>${(c.observacion || "Sin observaci\u00f3n").replace(/</g, "&lt;")}</span></div>
         <span class="badge">Nueva</span>
       </div>`).join("");
       } else {
@@ -4590,7 +4594,7 @@
         const lineaNombre = unidad ? lineaById(unidad.lineaId).nombre : "";
         return `<div class="task-card st-${o.estado}" onclick="openDetail('${o.id}')">
       <div class="task-top">
-        <div><div class="unit">${formatFolio(o.folio) ? formatFolio(o.folio) + " \u00b7 " : ""}${(unidad ? unidad.nombre : "Unidad eliminada").replace(/</g, "&lt;")}</div><div class="line">L\u00ednea ${lineaNombre.replace(/</g, "&lt;")}</div></div>
+        <div><div class="unit">${formatFolio("P", db.config.plantaNumero, o.folio) ? formatFolio("P", db.config.plantaNumero, o.folio) + " \u00b7 " : ""}${(unidad ? unidad.nombre : "Unidad eliminada").replace(/</g, "&lt;")}</div><div class="line">L\u00ednea ${lineaNombre.replace(/</g, "&lt;")}</div></div>
         <div class="task-badge badge-${o.estado}">${formatVence(o)}</div>
       </div>
       <div class="task-meta">
@@ -4626,7 +4630,7 @@
         return `<div class="correctiva-card ${enProceso ? "en-proceso" : ""}">
       <div class="cc-top">
         <div>
-          <div class="cc-linea">${formatFolio(c.folio) ? formatFolio(c.folio) + " \u00b7 " : ""}L\u00ednea ${(linea ? linea.nombre : "-").replace(/</g, "&lt;")}</div>
+          <div class="cc-linea">${formatFolio("C", db.config.plantaNumero, c.folio) ? formatFolio("C", db.config.plantaNumero, c.folio) + " \u00b7 " : ""}L\u00ednea ${(linea ? linea.nombre : "-").replace(/</g, "&lt;")}</div>
           <div class="cc-problema">${(c.problema || "").replace(/</g, "&lt;")}</div>
         </div>
       </div>
@@ -4722,7 +4726,7 @@
       currentTaskIdx = db.ordenes.findIndex(o => o.id === orderId);
       const o = db.ordenes[currentTaskIdx];
       const unidad = unidadById(o.unidadId);
-      document.getElementById("d-unit").textContent = unidad ? unidad.nombre : "Unidad eliminada";
+      document.getElementById("d-unit").textContent = (formatFolio("P", db.config.plantaNumero, o.folio) ? formatFolio("P", db.config.plantaNumero, o.folio) + " \u00b7 " : "") + (unidad ? unidad.nombre : "Unidad eliminada");
       document.getElementById("d-meta").textContent = `L\u00ednea ${unidad ? lineaById(unidad.lineaId).nombre : "-"} \u00b7 ${formatVence(o)}`;
       document.getElementById("d-checklist").innerHTML = o.checklist.map((c, ci) => `
     <div>
@@ -5411,8 +5415,10 @@
     // Correlativo/folio de trazabilidad (ver Planta.contadorFolios en el
     // backend): formato "OT-0007". Registros creados antes de este campo no
     // tienen folio (null), en ese caso no se muestra nada.
-    function formatFolio(folio) {
-      return folio ? "OT-" + String(folio).padStart(4, "0") : "";
+    function formatFolio(tipoLetra, plantaNumero, correlativo) {
+      if (!correlativo) return "";
+      const pn = plantaNumero ? String(plantaNumero).padStart(4, "0") : "0000";
+      return "OT-" + tipoLetra + "-" + pn + "-" + String(correlativo).padStart(4, "0");
     }
     function formatBytes(bytes) {
       if (bytes === undefined || bytes === null) return "";
@@ -5946,12 +5952,16 @@
       }
     }
 
-    /** Descarga una imagen (logo del cliente) como data URL, para poder incrustarla
-     * en el PDF con jsPDF. Si falla (CORS, red, etc.) devuelve null y el PDF
+    /** Descarga el logo del cliente (a través de nuestra propia API, para
+     * evitar problemas de CORS con el bucket S3/R2) como data URL, para
+     * poder incrustarla en el PDF con jsPDF. Si falla devuelve null y el PDF
      * se genera igual, solo que sin logo. */
-    async function cargarImagenComoDataURL(url) {
+    async function cargarLogoParaPdf(clienteId) {
       try {
-        const res = await fetch(url);
+        const token = getAuthToken();
+        const res = await fetch(API_BASE + "/clientes/" + clienteId + "/logo-proxy", {
+          headers: token ? { "Authorization": "Bearer " + token } : {},
+        });
         if (!res.ok) return null;
         const blob = await res.blob();
         return await new Promise((resolve) => {
@@ -5969,7 +5979,8 @@
         const data = await apiFetch("/reportes/repuestos/" + plantaId);
         const logoUrl = db.cliente && db.cliente.logoUrl;
         // SVG no lo soporta jsPDF directo; en ese caso el PDF se genera sin logo.
-        const logoDataUrl = (logoUrl && !/\.svg(\?|$)/i.test(logoUrl)) ? await cargarImagenComoDataURL(logoUrl) : null;
+        const logoDataUrl = (logoUrl && db.cliente.id && !/\.svg(\?|$)/i.test(logoUrl))
+          ? await cargarLogoParaPdf(db.cliente.id) : null;
         generarPdfRepuestos(data, logoDataUrl);
       } catch (e) { configError("No se pudo generar el reporte: " + e.message); }
     }
@@ -6121,7 +6132,7 @@
       } else {
         html += metricasData.historialCorrectivas.map(h => `
       <div class="historial-correctiva-card">
-        <div class="hc-top"><span>${formatFolio(h.folio) ? formatFolio(h.folio) + " \u00b7 " : ""}${(h.lineaNombre || "-").replace(/</g, "&lt;")} \u00b7 ${(h.problema || "").replace(/</g, "&lt;")}</span><span>${formatHoras(h.tiempoTotalHoras)}</span></div>
+        <div class="hc-top"><span>${formatFolio("C", h.plantaNumero, h.folio) ? formatFolio("C", h.plantaNumero, h.folio) + " \u00b7 " : ""}${(h.lineaNombre || "-").replace(/</g, "&lt;")} \u00b7 ${(h.problema || "").replace(/</g, "&lt;")}</span><span>${formatHoras(h.tiempoTotalHoras)}</span></div>
         <div class="hc-meta">Reportada ${formatFechaHora(h.createdAt)} \u00b7 Cerrada ${formatFechaHora(h.cerradaAt)}${h.resueltaPorNombre ? " \u00b7 Resuelta por " + h.resueltaPorNombre : ""}</div>
         ${h.solucion ? `<div class="hc-solucion">${h.solucion.replace(/</g, "&lt;")}</div>` : ""}
         ${h.fotoUrl ? `<a class="hc-link" href="${urlArchivo(h.fotoUrl)}" target="_blank" rel="noopener">Ver foto</a>` : ""}
@@ -6705,7 +6716,7 @@
         const t = db.tecnicos.find(x => x.id === o.tecnicoId);
         return `<div class="orden-row">
       <div class="info">
-        <strong>${formatFolio(o.folio) ? formatFolio(o.folio) + " \u00b7 " : ""}${(t ? t.nombre + " " + (t.apellido || "") : "T\u00e9cnico eliminado").replace(/</g, "&lt;")}</strong> \u2192 ${(u ? u.nombre : "Unidad eliminada").replace(/</g, "&lt;")} ${l ? "(" + l.nombre.replace(/</g, "&lt;") + ")" : ""}
+        <strong>${formatFolio("P", db.config.plantaNumero, o.folio) ? formatFolio("P", db.config.plantaNumero, o.folio) + " \u00b7 " : ""}${(t ? t.nombre + " " + (t.apellido || "") : "T\u00e9cnico eliminado").replace(/</g, "&lt;")}</strong> \u2192 ${(u ? u.nombre : "Unidad eliminada").replace(/</g, "&lt;")} ${l ? "(" + l.nombre.replace(/</g, "&lt;") + ")" : ""}
         <span>${o.fechaInicio} \u2192 ${o.fechaFin} \u00b7 ${formatVence(o)} \u00b7 ${o.checklist.length} tarea(s)</span>
       </div>
       ${oConfirming ? `
