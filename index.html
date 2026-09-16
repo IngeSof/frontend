@@ -3777,7 +3777,7 @@
           intentosFallidos: 0,
         })),
         ordenes: ordenes.map(o => ({
-          id: o.id, tipo: o.tipo, unidadId: o.unidadId, tecnicoId: o.tecnicoId, estado: o.estado,
+          id: o.id, tipo: o.tipo, unidadId: o.unidadId, tecnicoId: o.tecnicoId, estado: o.estado, folio: o.folio || null,
           fechaInicio: (o.fechaInicio || "").slice(0, 10), fechaFin: (o.fechaFin || "").slice(0, 10),
           fechaCompletado: o.fechaCompletado ? o.fechaCompletado.slice(0, 10) : null,
           checklist: (o.checklist || []).map(c => ({ id: c.id, nombre: c.nombre, subtareas: c.subtareas || [], completado: !!c.completado })),
@@ -3786,7 +3786,7 @@
         clasesRepuesto: clasesRepuesto, repuestos: [],
         catalogoTareas: catalogoTareas.map(c => ({ id: c.id, nombre: c.nombre, subtareas: c.subtareas || [] })),
         correctivas: correctivas.map(c => ({
-          id: c.id, lineaId: c.lineaId, problema: c.problema, observacion: c.observacion, estado: c.estado, creada: c.createdAt,
+          id: c.id, lineaId: c.lineaId, problema: c.problema, observacion: c.observacion, estado: c.estado, creada: c.createdAt, folio: c.folio || null,
           tomadaPorId: c.tomadaPorId || null, tomadaPorNombre: c.tomadaPor ? ((c.tomadaPor.nombre || "") + " " + (c.tomadaPor.apellido || "")).trim() : null,
           resueltaPorNombre: c.resueltaPor ? ((c.resueltaPor.nombre || "") + " " + (c.resueltaPor.apellido || "")).trim() : null,
           solucion: c.solucion || null, fotoUrl: c.fotoUrl || null,
@@ -3797,6 +3797,7 @@
       documentosCache = {};
       repuestosCache = {};
       plantillasCache = null;
+      aplicarLogoCliente(cliente && cliente.logoUrl);
       return db;
     }
 
@@ -3805,6 +3806,8 @@
       setCurrentRole(null);
       setSavedScreen(null);
       db = null;
+      detenerAutoRefrescoJefe();
+      aplicarLogoCliente(null); // vuelve al logo de Ingenova para la próxima sesión
       goTo("login");
     }
 
@@ -4185,6 +4188,19 @@
     }
 
     let db = null;
+    let dashboardRefreshTimer = null; // auto-actualización del dashboard del Jefe
+    let logoIngenovaDefault = ""; // logo por defecto de Ingenova, capturado en boot() antes de saber el cliente
+
+    // Reemplaza el logo de Ingenova por el del cliente en toda la app (login,
+    // barra superior, avatares). Si el cliente no ha subido uno, se usa el de
+    // Ingenova como respaldo. Se llama apenas se conoce el cliente
+    // (cargarDatosPlanta) y se revierte al cerrar sesión, para que la
+    // siguiente persona que entre (de otra empresa) no vea el logo ajeno.
+    function aplicarLogoCliente(logoUrl) {
+      const src = logoUrl || logoIngenovaDefault;
+      if (!src) return;
+      document.querySelectorAll(".brand-mark").forEach((img) => { img.src = src; });
+    }
     let currentTaskIdx = null;
     let opState = { linea: null, problema: null };
     let newLineaColor = LINEA_COLORS[0];
@@ -4328,15 +4344,8 @@
         history.replaceState(null, "", location.pathname);
       }
 
-      const realLogoSrc = document.querySelector("#screen-login .brand-mark").src;
-      const tecLoginLogo = document.getElementById("tec-login-logo");
-      if (tecLoginLogo) tecLoginLogo.src = realLogoSrc;
-      const loginFormLogo = document.getElementById("login-form-logo");
-      if (loginFormLogo) loginFormLogo.src = realLogoSrc;
-      const supervisorLogo = document.getElementById("supervisor-logo");
-      if (supervisorLogo) supervisorLogo.src = realLogoSrc;
-      const gerenciaLogo = document.getElementById("gerencia-logo");
-      if (gerenciaLogo) gerenciaLogo.src = realLogoSrc;
+      logoIngenovaDefault = document.querySelector("#screen-login .brand-mark").src;
+      aplicarLogoCliente(null); // por defecto, Ingenova, hasta saber a qué cliente pertenece la sesión
 
       // Restaurar sesión: si hay un token guardado y todavía es válido (no
       // expiró), volvemos a cargar los datos de la planta y saltamos
@@ -4372,12 +4381,36 @@
     function goTo(screen) {
       document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
       document.getElementById("screen-" + screen).classList.add("active");
-      if (screen === "jefe") renderJefe("general");
+      if (screen === "jefe") { renderJefe("general"); iniciarAutoRefrescoJefe(); }
+      else { detenerAutoRefrescoJefe(); }
       if (screen === "tecnico") renderTecnico();
       if (screen === "operario") prepararOperario();
       if (screen === "tecnico-login") { tecLoginStep = "list"; tecLoginTecnicoId = null; prepararTecLogin(); }
       if (screen === "supervisor") renderSupervisorHistorial();
       if (screen === "gerencia") renderGerencia();
+    }
+
+    /**
+     * Refresca los datos de la planta cada cierto tiempo mientras el jefe está
+     * viendo su dashboard, para que aparezcan correctivas/órdenes nuevas sin
+     * tener que recargar la página a mano. Se detiene apenas se cambia de
+     * pantalla o se cierra sesión, para no seguir pidiendo datos de fondo.
+     */
+    function iniciarAutoRefrescoJefe() {
+      detenerAutoRefrescoJefe();
+      dashboardRefreshTimer = setInterval(async () => {
+        const screenEl = document.getElementById("screen-jefe");
+        if (!screenEl || !screenEl.classList.contains("active")) return;
+        const plantaId = getPlantaId();
+        if (!plantaId) return;
+        try {
+          await cargarDatosPlanta(plantaId);
+          renderJefe(currentJefeSel);
+        } catch (e) { /* fallo silencioso: se reintenta en el próximo ciclo */ }
+      }, 30000);
+    }
+    function detenerAutoRefrescoJefe() {
+      if (dashboardRefreshTimer) { clearInterval(dashboardRefreshTimer); dashboardRefreshTimer = null; }
     }
 
     function lineaById(id) { return db.lineas.find(l => l.id === id); }
@@ -4511,7 +4544,7 @@
         alertPanel.style.display = "block";
         document.getElementById("alert-rows").innerHTML = correctivasActivas.map(c => `
       <div class="alert-row">
-        <div class="txt"><strong>${(lineaById(c.lineaId) ? lineaById(c.lineaId).nombre : c.lineaId).replace(/</g, "&lt;")} \u00b7 ${(c.problema || "").replace(/</g, "&lt;")}</strong><span>${(c.observacion || "Sin observaci\u00f3n").replace(/</g, "&lt;")}</span></div>
+        <div class="txt"><strong>${formatFolio(c.folio) ? formatFolio(c.folio) + " \u00b7 " : ""}${(lineaById(c.lineaId) ? lineaById(c.lineaId).nombre : c.lineaId).replace(/</g, "&lt;")} \u00b7 ${(c.problema || "").replace(/</g, "&lt;")}</strong><span>${(c.observacion || "Sin observaci\u00f3n").replace(/</g, "&lt;")}</span></div>
         <span class="badge">Nueva</span>
       </div>`).join("");
       } else {
@@ -4557,7 +4590,7 @@
         const lineaNombre = unidad ? lineaById(unidad.lineaId).nombre : "";
         return `<div class="task-card st-${o.estado}" onclick="openDetail('${o.id}')">
       <div class="task-top">
-        <div><div class="unit">${(unidad ? unidad.nombre : "Unidad eliminada").replace(/</g, "&lt;")}</div><div class="line">L\u00ednea ${lineaNombre.replace(/</g, "&lt;")}</div></div>
+        <div><div class="unit">${formatFolio(o.folio) ? formatFolio(o.folio) + " \u00b7 " : ""}${(unidad ? unidad.nombre : "Unidad eliminada").replace(/</g, "&lt;")}</div><div class="line">L\u00ednea ${lineaNombre.replace(/</g, "&lt;")}</div></div>
         <div class="task-badge badge-${o.estado}">${formatVence(o)}</div>
       </div>
       <div class="task-meta">
@@ -4593,7 +4626,7 @@
         return `<div class="correctiva-card ${enProceso ? "en-proceso" : ""}">
       <div class="cc-top">
         <div>
-          <div class="cc-linea">L\u00ednea ${(linea ? linea.nombre : "-").replace(/</g, "&lt;")}</div>
+          <div class="cc-linea">${formatFolio(c.folio) ? formatFolio(c.folio) + " \u00b7 " : ""}L\u00ednea ${(linea ? linea.nombre : "-").replace(/</g, "&lt;")}</div>
           <div class="cc-problema">${(c.problema || "").replace(/</g, "&lt;")}</div>
         </div>
       </div>
@@ -4706,7 +4739,7 @@
       if (fotoInput) fotoInput.value = "";
       const fotoNote = document.getElementById("d-foto-actual");
       if (fotoNote) {
-        fotoNote.innerHTML = o.fotoUrl ? `Ya tiene una foto guardada: <a href="${apiOrigin() + o.fotoUrl}" target="_blank" rel="noopener">verla</a>` : "";
+        fotoNote.innerHTML = o.fotoUrl ? `Ya tiene una foto guardada: <a href="${urlArchivo(o.fotoUrl)}" target="_blank" rel="noopener">verla</a>` : "";
       }
       document.getElementById("save-note").textContent = "";
       document.getElementById("detail-overlay").classList.add("open");
@@ -4778,7 +4811,7 @@
           return `<div class="documento-row">
           <span class="documento-icon">${esPdf ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`}</span>
           <div class="documento-info">
-            <a href="${apiOrigin() + d.archivoUrl}" target="_blank" rel="noopener" class="documento-nombre">${(d.nombre || "Documento").replace(/</g, "&lt;")}</a>
+            <a href="${urlArchivo(d.archivoUrl)}" target="_blank" rel="noopener" class="documento-nombre">${(d.nombre || "Documento").replace(/</g, "&lt;")}</a>
             <span class="documento-meta">${formatBytes(d.tamanioBytes)}${subidoPorNombre ? " · " + subidoPorNombre : ""}${d.descripcion ? " · " + d.descripcion.replace(/</g, "&lt;") : ""}</span>
           </div>
         </div>`;
@@ -5157,7 +5190,7 @@
                     return `<div class="documento-row">
                     <span class="documento-icon">${esPdf ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`}</span>
                     <div class="documento-info">
-                      <a href="${apiOrigin() + d.archivoUrl}" target="_blank" rel="noopener" class="documento-nombre">${(d.nombre || "Documento").replace(/</g, "&lt;")}</a>
+                      <a href="${urlArchivo(d.archivoUrl)}" target="_blank" rel="noopener" class="documento-nombre">${(d.nombre || "Documento").replace(/</g, "&lt;")}</a>
                       <span class="documento-meta">${formatBytes(d.tamanioBytes)}${subidoPorNombre ? " · " + subidoPorNombre : ""}${d.descripcion ? " · " + d.descripcion.replace(/</g, "&lt;") : ""}</span>
                     </div>
                     ${dConfirming ? `
@@ -5365,6 +5398,22 @@
 
     /* ---------------- BIBLIOTECA T\u00c9CNICA (documentos por unidad) ---------------- */
     function apiOrigin() { return API_BASE.replace(/\/api\/?$/, ""); }
+    // Las fotos/documentos guardados con almacenamiento local vienen como ruta
+    // relativa ("/files/xxx", hay que anteponer la URL del backend) pero los
+    // guardados en un bucket S3/R2 (recomendado en producción) ya vienen como
+    // URL absoluta ("https://..."). Antes se anteponía apiOrigin() siempre,
+    // lo que rompía el link ("...onrender.comhttps://...") apenas el storage
+    // pasaba a ser S3.
+    function urlArchivo(url) {
+      if (!url) return "";
+      return /^https?:\/\//i.test(url) ? url : apiOrigin() + url;
+    }
+    // Correlativo/folio de trazabilidad (ver Planta.contadorFolios en el
+    // backend): formato "OT-0007". Registros creados antes de este campo no
+    // tienen folio (null), en ese caso no se muestra nada.
+    function formatFolio(folio) {
+      return folio ? "OT-" + String(folio).padStart(4, "0") : "";
+    }
     function formatBytes(bytes) {
       if (bytes === undefined || bytes === null) return "";
       if (bytes < 1024) return bytes + " B";
@@ -5474,7 +5523,7 @@
       return `<div class="documento-row">
     <span class="documento-icon">${iconoDocumento(d.tipo)}</span>
     <div class="documento-info">
-      <a href="${apiOrigin() + d.archivoUrl}" target="_blank" rel="noopener" class="documento-nombre">${(d.nombre || "Documento").replace(/</g, "&lt;")}</a>
+      <a href="${urlArchivo(d.archivoUrl)}" target="_blank" rel="noopener" class="documento-nombre">${(d.nombre || "Documento").replace(/</g, "&lt;")}</a>
       <span class="documento-meta">${formatBytes(d.tamanioBytes)}${subidoPorNombre ? " · " + subidoPorNombre : ""}${d.descripcion ? " · " + d.descripcion.replace(/</g, "&lt;") : ""}</span>
     </div>
     ${esJefe ? `<button class="icon-btn danger" onclick="eliminarDocumentoBiblioteca('${d.id}')" aria-label="Eliminar documento"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z"/></svg></button>` : ""}
@@ -5677,6 +5726,12 @@
     function renderConfiguracion() {
       const nombreInput = document.getElementById("config-empresa-nombre");
       if (nombreInput) nombreInput.value = (db.cliente && db.cliente.nombre) || db.packing.nombre || "";
+      const logoPreview = document.getElementById("config-logo-preview");
+      if (logoPreview) {
+        const logoUrl = db.cliente && db.cliente.logoUrl;
+        if (logoUrl) { logoPreview.src = logoUrl; logoPreview.style.display = "inline-block"; }
+        else { logoPreview.removeAttribute("src"); logoPreview.style.display = "none"; }
+      }
       const e = (db.cliente && db.cliente.encargado) || {};
       const nombreEl = document.getElementById("config-mi-nombre");
       const apellidoEl = document.getElementById("config-mi-apellido");
@@ -5715,6 +5770,53 @@
         db.packing.nombre = nombre;
         configSuccess("Nombre de la empresa actualizado.");
       } catch (e) { configError("No se pudo guardar: " + e.message); }
+    }
+    async function subirLogoEmpresa() {
+      const btn = document.getElementById("config-logo-btn");
+      try {
+        clearConfigMsgs();
+        const fileInput = document.getElementById("config-logo-file");
+        if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+          configError("Elige una imagen (PNG, JPG, WEBP o SVG) antes de subir.");
+          return;
+        }
+        if (!db.cliente || !db.cliente.id) { configError("No se pudo identificar la empresa."); return; }
+        const file = fileInput.files[0];
+        const MAX_BYTES = 4 * 1024 * 1024;
+        if (file.size > MAX_BYTES) { configError("La imagen supera los 4 MB permitidos."); return; }
+        if (btn) { btn.disabled = true; btn.textContent = "Subiendo…"; }
+        const fd = new FormData();
+        fd.append("logo", file);
+        const token = getAuthToken();
+        const res = await fetch(API_BASE + "/clientes/" + db.cliente.id + "/logo", {
+          method: "POST",
+          headers: token ? { "Authorization": "Bearer " + token } : {},
+          body: fd,
+        });
+        let data = null;
+        try { data = await res.json(); } catch (e) { /* sin cuerpo */ }
+        if (!res.ok) throw new Error((data && data.error) || ("Error " + res.status));
+        db.cliente.logoUrl = data.logoUrl;
+        fileInput.value = "";
+        aplicarLogoCliente(data.logoUrl);
+        renderConfiguracion();
+        configSuccess("Logo actualizado.");
+      } catch (e) {
+        configError("No se pudo subir el logo: " + e.message);
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = "Subir logo"; }
+      }
+    }
+    async function quitarLogoEmpresa() {
+      try {
+        clearConfigMsgs();
+        if (!db.cliente || !db.cliente.id) { configError("No se pudo identificar la empresa."); return; }
+        await apiFetch("/clientes/" + db.cliente.id + "/logo", { method: "DELETE" });
+        db.cliente.logoUrl = null;
+        aplicarLogoCliente(null);
+        renderConfiguracion();
+        configSuccess("Logo quitado. Se usará el logo de Ingenova mientras no subas uno nuevo.");
+      } catch (e) { configError("No se pudo quitar el logo: " + e.message); }
     }
     /** El jefe de mantención edita sus propios datos (nombre, apellido, correo, teléfono). */
     async function guardarMiPerfil() {
@@ -5844,20 +5946,45 @@
       }
     }
 
+    /** Descarga una imagen (logo del cliente) como data URL, para poder incrustarla
+     * en el PDF con jsPDF. Si falla (CORS, red, etc.) devuelve null y el PDF
+     * se genera igual, solo que sin logo. */
+    async function cargarImagenComoDataURL(url) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const blob = await res.blob();
+        return await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
+      } catch (e) { return null; }
+    }
     async function descargarReporteRepuestos() {
       try {
         clearConfigMsgs();
         const plantaId = getPlantaId();
         const data = await apiFetch("/reportes/repuestos/" + plantaId);
-        generarPdfRepuestos(data);
+        const logoUrl = db.cliente && db.cliente.logoUrl;
+        // SVG no lo soporta jsPDF directo; en ese caso el PDF se genera sin logo.
+        const logoDataUrl = (logoUrl && !/\.svg(\?|$)/i.test(logoUrl)) ? await cargarImagenComoDataURL(logoUrl) : null;
+        generarPdfRepuestos(data, logoDataUrl);
       } catch (e) { configError("No se pudo generar el reporte: " + e.message); }
     }
-    function generarPdfRepuestos(data) {
+    function generarPdfRepuestos(data, logoDataUrl) {
       const jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
       if (!jsPDFCtor) { configError("No se pudo cargar el generador de PDF. Revisa tu conexión e inténtalo de nuevo."); return; }
       const doc = new jsPDFCtor();
       const margenX = 14;
       let y = 18;
+      if (logoDataUrl) {
+        try {
+          const formato = /^data:image\/png/i.test(logoDataUrl) ? "PNG" : /^data:image\/webp/i.test(logoDataUrl) ? "WEBP" : "JPEG";
+          doc.addImage(logoDataUrl, formato, 178, 10, 18, 18);
+        } catch (e) { /* formato no compatible: seguimos sin logo */ }
+      }
       doc.setFontSize(14);
       doc.text(`Repuestos por línea · ${data.plantaNombre || ""}`, margenX, y);
       y += 6;
@@ -5994,10 +6121,10 @@
       } else {
         html += metricasData.historialCorrectivas.map(h => `
       <div class="historial-correctiva-card">
-        <div class="hc-top"><span>${(h.lineaNombre || "-").replace(/</g, "&lt;")} \u00b7 ${(h.problema || "").replace(/</g, "&lt;")}</span><span>${formatHoras(h.tiempoTotalHoras)}</span></div>
+        <div class="hc-top"><span>${formatFolio(h.folio) ? formatFolio(h.folio) + " \u00b7 " : ""}${(h.lineaNombre || "-").replace(/</g, "&lt;")} \u00b7 ${(h.problema || "").replace(/</g, "&lt;")}</span><span>${formatHoras(h.tiempoTotalHoras)}</span></div>
         <div class="hc-meta">Reportada ${formatFechaHora(h.createdAt)} \u00b7 Cerrada ${formatFechaHora(h.cerradaAt)}${h.resueltaPorNombre ? " \u00b7 Resuelta por " + h.resueltaPorNombre : ""}</div>
         ${h.solucion ? `<div class="hc-solucion">${h.solucion.replace(/</g, "&lt;")}</div>` : ""}
-        ${h.fotoUrl ? `<a class="hc-link" href="${apiOrigin() + h.fotoUrl}" target="_blank" rel="noopener">Ver foto</a>` : ""}
+        ${h.fotoUrl ? `<a class="hc-link" href="${urlArchivo(h.fotoUrl)}" target="_blank" rel="noopener">Ver foto</a>` : ""}
       </div>`).join("");
       }
 
@@ -6578,7 +6705,7 @@
         const t = db.tecnicos.find(x => x.id === o.tecnicoId);
         return `<div class="orden-row">
       <div class="info">
-        <strong>${(t ? t.nombre + " " + (t.apellido || "") : "T\u00e9cnico eliminado").replace(/</g, "&lt;")}</strong> \u2192 ${(u ? u.nombre : "Unidad eliminada").replace(/</g, "&lt;")} ${l ? "(" + l.nombre.replace(/</g, "&lt;") + ")" : ""}
+        <strong>${formatFolio(o.folio) ? formatFolio(o.folio) + " \u00b7 " : ""}${(t ? t.nombre + " " + (t.apellido || "") : "T\u00e9cnico eliminado").replace(/</g, "&lt;")}</strong> \u2192 ${(u ? u.nombre : "Unidad eliminada").replace(/</g, "&lt;")} ${l ? "(" + l.nombre.replace(/</g, "&lt;") + ")" : ""}
         <span>${o.fechaInicio} \u2192 ${o.fechaFin} \u00b7 ${formatVence(o)} \u00b7 ${o.checklist.length} tarea(s)</span>
       </div>
       ${oConfirming ? `
@@ -7020,6 +7147,15 @@
             <input type="text" id="config-empresa-nombre" placeholder="Ej: Exportadora Yucay SpA">
             <button class="add-btn" onclick="guardarNombreEmpresa()">Guardar</button>
           </div>
+          <label style="margin-top:12px;">Logo de la empresa</label>
+          <div class="row" style="align-items:center;">
+            <img id="config-logo-preview" src="" alt="Logo de la empresa"
+              style="width:48px;height:48px;border-radius:10px;object-fit:contain;background:#F4F4F2;display:none;border:1px solid var(--line);flex-shrink:0;">
+            <input type="file" id="config-logo-file" accept="image/png,image/jpeg,image/webp,image/svg+xml" style="flex:1;min-width:160px;">
+            <button class="add-btn" id="config-logo-btn" onclick="subirLogoEmpresa()">Subir logo</button>
+            <button class="add-btn" id="config-logo-quitar-btn" style="background:var(--red);" onclick="quitarLogoEmpresa()">Quitar</button>
+          </div>
+          <div style="font-size:12px;color:var(--ink-60);margin-top:4px;">Aparece en toda la app (en vez del logo de Ingenova) y en el PDF de reportes. Mientras no subas uno, se usa el logo de Ingenova.</div>
         </div>
       </div>
 
