@@ -3840,6 +3840,22 @@
       goTo("login-form");
     }
 
+    /**
+     * Antes de tener credenciales, el usuario elige un botón (Jefe, Gerencia,
+     * Supervisor) para llegar al formulario de login, y ese botón quedaba
+     * guardado en loginFormRole. Pero el formulario es el mismo para los
+     * tres roles, así que si alguien entraba con una cuenta que en realidad
+     * tiene otro rol (ej. clickeó "Gerencia" pero puso las credenciales del
+     * jefe de mantención), antes igual lo mandábamos a la pantalla de
+     * Gerencia por el botón que clickeó — mostrando el nombre y los datos
+     * del jefe adentro de la pantalla de gerencia. Ahora se decide según el
+     * rol real que viene en la cuenta autenticada, no el botón clickeado.
+     */
+    function screenParaRol(rol) {
+      if (rol === "GERENCIA") return "gerencia";
+      if (rol === "SUPERVISOR") return "supervisor";
+      return "jefe"; // JEFE_MANTENCION y ADMIN_INGENOVA
+    }
     async function submitLoginForm() {
       const email = document.getElementById("login-form-email").value.trim();
       const password = document.getElementById("login-form-password").value;
@@ -3858,9 +3874,10 @@
         }
         setAuthToken(data.token);
         setCurrentRole(data.usuario.rol);
-        setSavedScreen(loginFormRole);
+        const screenReal = screenParaRol(data.usuario.rol);
+        setSavedScreen(screenReal);
         await cargarDatosPlanta(payload.plantaIds[0]);
-        goTo(loginFormRole);
+        goTo(screenReal);
       } catch (e) {
         errEl.textContent = e.message || "Credenciales inválidas.";
       } finally {
@@ -4202,8 +4219,9 @@
       const src = logoUrl || logoIngenovaDefault;
       if (!src) return;
       document.querySelectorAll(".brand-mark").forEach((img) => { img.src = src; });
-      const favicon = document.getElementById("app-favicon");
-      if (favicon) favicon.href = src;
+      // El ícono de la pestaña del navegador es la marca del software (Ingenova),
+      // no la del cliente que se está viendo — se deja fijo, a diferencia del
+      // resto de los logos que sí cambian según el cliente.
     }
     let currentTaskIdx = null;
     let opState = { linea: null, problema: null };
@@ -4350,6 +4368,8 @@
 
       logoIngenovaDefault = document.querySelector("#screen-login .brand-mark").src;
       aplicarLogoCliente(null); // por defecto, Ingenova, hasta saber a qué cliente pertenece la sesión
+      const favicon = document.getElementById("app-favicon");
+      if (favicon) favicon.href = logoIngenovaDefault; // fijo: siempre el isologo de Ingenova, no el del cliente
 
       // Restaurar sesión: si hay un token guardado y todavía es válido (no
       // expiró), volvemos a cargar los datos de la planta y saltamos
@@ -5417,7 +5437,7 @@
     // tienen folio (null), en ese caso no se muestra nada.
     function formatFolio(tipoLetra, plantaNumero, correlativo) {
       if (!correlativo) return "";
-      const pn = plantaNumero ? String(plantaNumero).padStart(4, "0") : "0000";
+      const pn = plantaNumero ? String(plantaNumero).padStart(2, "0") : "00";
       return "OT-" + tipoLetra + "-" + pn + "-" + String(correlativo).padStart(4, "0");
     }
     function formatBytes(bytes) {
@@ -7077,6 +7097,8 @@
       const deberianListas = todasOrds.filter(o => parseIso(o.fechaFin) <= today).length;
       const proyectadoPct = total ? Math.round(deberianListas / total * 100) : 0;
       const diferencia = realPct - proyectadoPct;
+      const correctivasAbiertas = (db.correctivas || []).filter(c => c.estado !== "cerrada").length;
+      const correctivasResueltas = (db.correctivas || []).filter(c => c.estado === "cerrada").length;
 
       document.getElementById("gerencia-kpi-row").innerHTML = `
     <div class="kpi-card accent">
@@ -7094,6 +7116,14 @@
     <div class="kpi-card">
       <div class="n">${total}</div>
       <div class="l">Trabajos totales</div>
+    </div>
+    <div class="kpi-card ${correctivasAbiertas > 0 ? "alert" : ""}">
+      <div class="n">${correctivasAbiertas}</div>
+      <div class="l">Correctivas activas</div>
+    </div>
+    <div class="kpi-card">
+      <div class="n">${correctivasResueltas}</div>
+      <div class="l">Correctivas resueltas</div>
     </div>`;
 
       document.getElementById("gerencia-line-rows").innerHTML = lineasOrdenadas().map(l => {
