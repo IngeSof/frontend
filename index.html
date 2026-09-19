@@ -3546,6 +3546,80 @@
       </div>
     </div>
 
+    <!-- Activación de cuenta (Jefe/Gerencia/Supervisor invitados): llegan acá
+         desde el link del correo de invitación (?activar=usuarioId), eligen
+         su propia clave por primera vez y quedan logueados. -->
+    <div class="screen" id="screen-activar-cuenta">
+      <div class="login-card">
+        <div class="login-brand">
+          <img class="brand-mark" style="width:34px;height:34px;" src="" alt="Ingenova">
+          <div>
+            <span class="brandword">Ingenova</span>
+            <div class="sub" style="margin-top:4px;">Activar cuenta</div>
+          </div>
+        </div>
+        <div id="activar-cuenta-intro" style="font-size:13.5px; color:var(--ink-70); margin-bottom:14px;">Cargando…</div>
+        <div class="login-form-field">
+          <label for="activar-cuenta-password">Elige tu clave</label>
+          <input type="password" id="activar-cuenta-password" placeholder="Mínimo 8 caracteres" autocomplete="new-password">
+        </div>
+        <div class="login-form-field">
+          <label for="activar-cuenta-password2">Repite tu clave</label>
+          <input type="password" id="activar-cuenta-password2" placeholder="••••••••" autocomplete="new-password"
+            onkeydown="if(event.key==='Enter') submitActivarCuenta();">
+        </div>
+        <div class="login-form-error" id="activar-cuenta-error"></div>
+        <button class="login-form-submit" id="activar-cuenta-submit" onclick="submitActivarCuenta()">Activar y entrar</button>
+        <button class="login-form-back" onclick="goTo('login')">← Volver</button>
+      </div>
+    </div>
+
+    <!-- Panel de administración de Ingenova (solo ADMIN_INGENOVA): alta de
+         clientes nuevos (empresa + su primer Jefe de mantención), con envío
+         de la invitación por correo. Reemplaza el proceso manual anterior. -->
+    <div class="screen" id="screen-admin-ingenova">
+      <div class="topbar">
+        <div class="topbar-left">
+          <img class="brand-mark" style="width:28px;height:28px;" src="" alt="Ingenova">
+          <span class="brandword">Ingenova</span>
+          <span class="rolechip">Administración</span>
+        </div>
+        <div class="topbar-right">
+          <button class="logout-btn" onclick="cerrarSesion()">Cerrar sesión</button>
+        </div>
+      </div>
+      <div class="jefe-main" style="max-width:900px;">
+        <div class="jefe-header">
+          <h2>Clientes</h2>
+          <p style="color:var(--ink-60); font-size:13px; margin-top:4px;">Empresas suscritas a Ingenova Mantención.</p>
+        </div>
+        <div id="ai-error" style="display:none; font-size:12.5px; padding:10px 14px; border-radius:10px; margin:12px 0;"></div>
+
+        <div class="panel" style="margin-top:8px;">
+          <div class="panel-title" style="cursor:pointer;" onclick="toggleAiNuevoCliente()">
+            <h3>+ Nuevo cliente</h3>
+            <div class="panel-sub">Crea la empresa y su primer Jefe de mantención, y le envía la invitación por correo.</div>
+          </div>
+          <div id="ai-nuevo-cliente-form" style="display:none; margin-top:14px;">
+            <div class="documento-upload-form" style="padding:0;">
+              <input type="text" id="ai-cliente-nombre" placeholder="Nombre de la empresa (ej: Aurora Australis)">
+              <input type="text" id="ai-cliente-rut" placeholder="RUT de la empresa (opcional)">
+              <div class="row">
+                <input type="text" id="ai-jefe-nombre" placeholder="Nombre del jefe de mantención">
+                <input type="text" id="ai-jefe-apellido" placeholder="Apellido (opcional)">
+              </div>
+              <input type="email" id="ai-jefe-email" placeholder="Correo del jefe de mantención">
+              <div class="row">
+                <button id="ai-crear-btn" onclick="crearClienteConJefe()">Crear cliente y enviar invitación</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="ai-clientes-list" style="margin-top:18px;"></div>
+      </div>
+    </div>
+
   </div>
 
   <div class="detail-overlay" id="detail-overlay" onclick="if(event.target===this) closeDetail()">
@@ -3854,7 +3928,8 @@
     function screenParaRol(rol) {
       if (rol === "GERENCIA") return "gerencia";
       if (rol === "SUPERVISOR") return "supervisor";
-      return "jefe"; // JEFE_MANTENCION y ADMIN_INGENOVA
+      if (rol === "ADMIN_INGENOVA") return "admin-ingenova";
+      return "jefe"; // JEFE_MANTENCION
     }
     async function submitLoginForm() {
       const email = document.getElementById("login-form-email").value.trim();
@@ -3867,6 +3942,17 @@
       btn.disabled = true; btn.textContent = "Ingresando...";
       try {
         const data = await apiFetch("/auth/login", { method: "POST", body: { email, password } });
+        // ADMIN_INGENOVA (staff de Ingenova) no pertenece a ningún cliente ni
+        // planta — su pantalla es el panel de administración, no el
+        // dashboard de una planta, así que no aplica el chequeo de plantaIds
+        // ni cargarDatosPlanta de más abajo.
+        if (data.usuario.rol === "ADMIN_INGENOVA") {
+          setAuthToken(data.token);
+          setCurrentRole(data.usuario.rol);
+          setSavedScreen("admin-ingenova");
+          goTo("admin-ingenova");
+          return;
+        }
         const payload = parseJwt(data.token);
         if (!payload || !payload.plantaIds || !payload.plantaIds.length) {
           errEl.textContent = "Esta cuenta no tiene ninguna planta asignada todavía.";
@@ -4370,6 +4456,19 @@
       aplicarLogoCliente(null); // por defecto, Ingenova, hasta saber a qué cliente pertenece la sesión
       const favicon = document.getElementById("app-favicon");
       if (favicon) favicon.href = logoIngenovaDefault; // fijo: siempre el isologo de Ingenova, no el del cliente
+      document.querySelectorAll("#screen-activar-cuenta .brand-mark, #screen-admin-ingenova .brand-mark").forEach((img) => { img.src = logoIngenovaDefault; });
+
+      // Link de invitación de Jefe/Gerencia/Supervisor (?activar=usuarioId):
+      // tiene prioridad sobre cualquier sesión guardada — si alguien abre
+      // este link, es porque quiere activar ESA cuenta puntual, aunque el
+      // navegador ya tuviera otra sesión activa.
+      const activarParam = params.get("activar");
+      if (activarParam) {
+        history.replaceState(null, "", location.pathname);
+        document.getElementById("boot-loading").style.display = "none";
+        abrirActivarCuenta(activarParam);
+        return;
+      }
 
       // Restaurar sesión: si hay un token guardado y todavía es válido (no
       // expiró), volvemos a cargar los datos de la planta y saltamos
@@ -4378,6 +4477,12 @@
       const token = getAuthToken();
       const savedScreen = getSavedScreen();
       const plantaId = getPlantaId();
+      // ADMIN_INGENOVA no tiene planta — su sesión se restaura solo con el token.
+      if (token && savedScreen === "admin-ingenova" && tokenValido(token)) {
+        document.getElementById("boot-loading").style.display = "none";
+        goTo("admin-ingenova");
+        return;
+      }
       if (plantaId) await asegurarTokenDispositivo(plantaId);
       if (token && savedScreen && plantaId && tokenValido(token)) {
         try {
@@ -4412,6 +4517,7 @@
       if (screen === "tecnico-login") { tecLoginStep = "list"; tecLoginTecnicoId = null; prepararTecLogin(); }
       if (screen === "supervisor") renderSupervisorHistorial();
       if (screen === "gerencia") renderGerencia();
+      if (screen === "admin-ingenova") cargarAdminIngenova();
     }
 
     /**
@@ -4435,6 +4541,183 @@
     }
     function detenerAutoRefrescoJefe() {
       if (dashboardRefreshTimer) { clearInterval(dashboardRefreshTimer); dashboardRefreshTimer = null; }
+    }
+
+    /* ---------------- ACTIVACIÓN DE CUENTA (Jefe/Gerencia/Supervisor) ---------------- */
+    const ROL_LABELS_ACTIVAR = { JEFE_MANTENCION: "Jefe de mantención", GERENCIA: "Gerencia", SUPERVISOR: "Supervisor" };
+    let activarCuentaUsuarioId = null;
+    async function abrirActivarCuenta(usuarioId) {
+      activarCuentaUsuarioId = usuarioId;
+      document.getElementById("activar-cuenta-password").value = "";
+      document.getElementById("activar-cuenta-password2").value = "";
+      document.getElementById("activar-cuenta-password").disabled = false;
+      document.getElementById("activar-cuenta-password2").disabled = false;
+      document.getElementById("activar-cuenta-submit").disabled = false;
+      document.getElementById("activar-cuenta-error").textContent = "";
+      document.getElementById("activar-cuenta-intro").textContent = "Cargando…";
+      document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+      document.getElementById("screen-activar-cuenta").classList.add("active");
+      try {
+        const info = await apiFetch("/auth/invitacion/" + usuarioId);
+        if (info.estado !== "invitado") {
+          document.getElementById("activar-cuenta-intro").textContent = "Esta cuenta ya fue activada. Si no recuerdas tu clave, pide que te reenvíen la invitación.";
+          document.getElementById("activar-cuenta-password").disabled = true;
+          document.getElementById("activar-cuenta-password2").disabled = true;
+          document.getElementById("activar-cuenta-submit").disabled = true;
+          return;
+        }
+        const rolLabel = ROL_LABELS_ACTIVAR[info.rol] || info.rol;
+        const nombreSeguro = (info.nombre || "").replace(/</g, "&lt;");
+        const clienteSeguro = info.clienteNombre ? info.clienteNombre.replace(/</g, "&lt;") : "";
+        document.getElementById("activar-cuenta-intro").innerHTML =
+          `Hola <strong>${nombreSeguro}</strong>, vas a activar tu cuenta de ${rolLabel}${clienteSeguro ? " en <strong>" + clienteSeguro + "</strong>" : ""}. Elige tu clave para continuar.`;
+      } catch (e) {
+        document.getElementById("activar-cuenta-intro").textContent = "No se pudo cargar la invitación: " + e.message;
+        document.getElementById("activar-cuenta-submit").disabled = true;
+      }
+    }
+    async function submitActivarCuenta() {
+      const errEl = document.getElementById("activar-cuenta-error");
+      errEl.textContent = "";
+      const p1 = document.getElementById("activar-cuenta-password").value;
+      const p2 = document.getElementById("activar-cuenta-password2").value;
+      if (!p1 || p1.length < 8) { errEl.textContent = "La clave debe tener al menos 8 caracteres."; return; }
+      if (p1 !== p2) { errEl.textContent = "Las claves no coinciden."; return; }
+      const btn = document.getElementById("activar-cuenta-submit");
+      btn.disabled = true; btn.textContent = "Activando…";
+      try {
+        const data = await apiFetch("/auth/activar-password", { method: "POST", body: { usuarioId: activarCuentaUsuarioId, password: p1 } });
+        setAuthToken(data.token);
+        setCurrentRole(data.usuario.rol);
+        const payload = parseJwt(data.token);
+        const screenReal = screenParaRol(data.usuario.rol);
+        setSavedScreen(screenReal);
+        if (payload && payload.plantaIds && payload.plantaIds.length) {
+          await cargarDatosPlanta(payload.plantaIds[0]);
+          goTo(screenReal);
+        } else if (data.usuario.rol === "JEFE_MANTENCION") {
+          // Recién activado y sin plantas todavía (cliente nuevo): mostramos
+          // su pantalla y abrimos directo el formulario para crear la
+          // primera planta, en vez de dejarlo en un dashboard vacío sin
+          // indicarle qué hacer.
+          try { db.cliente = await apiFetch("/clientes/me"); } catch (e) { /* no crítico */ }
+          goTo(screenReal);
+          openConfiguracion();
+        } else {
+          goTo(screenReal);
+        }
+      } catch (e) {
+        errEl.textContent = e.message || "No se pudo activar la cuenta.";
+      } finally {
+        btn.disabled = false; btn.textContent = "Activar y entrar";
+      }
+    }
+
+    /* ---------------- PANEL DE ADMINISTRACIÓN (ADMIN_INGENOVA) ---------------- */
+    let aiClientes = null;
+    function aiError(msg) {
+      const el = document.getElementById("ai-error");
+      if (el) { el.textContent = msg; el.style.background = "#FDE8E4"; el.style.color = "#A32D2D"; el.style.display = "block"; }
+    }
+    function aiSuccess(msg) {
+      const el = document.getElementById("ai-error");
+      if (el) { el.textContent = msg; el.style.background = "#E7F4EE"; el.style.color = "#1F7A57"; el.style.display = "block"; }
+    }
+    function clearAiError() {
+      const el = document.getElementById("ai-error");
+      if (el) { el.style.display = "none"; el.textContent = ""; }
+    }
+    function toggleAiNuevoCliente() {
+      const form = document.getElementById("ai-nuevo-cliente-form");
+      if (!form) return;
+      form.style.display = form.style.display === "none" ? "block" : "none";
+    }
+    async function cargarAdminIngenova() {
+      clearAiError();
+      document.getElementById("ai-clientes-list").innerHTML = `<div class="empty-repuestos">Cargando…</div>`;
+      try {
+        aiClientes = await apiFetch("/clientes");
+      } catch (e) {
+        aiClientes = [];
+        aiError("No se pudieron cargar los clientes: " + e.message);
+      }
+      renderAiClientes();
+    }
+    function renderAiClientes() {
+      const cont = document.getElementById("ai-clientes-list");
+      if (!cont) return;
+      if (!aiClientes || aiClientes.length === 0) {
+        cont.innerHTML = `<div class="empty-repuestos">Todavía no hay clientes. Crea el primero arriba.</div>`;
+        return;
+      }
+      cont.innerHTML = aiClientes.map((c) => {
+        const jefe = (c.usuarios || [])[0] || null;
+        const badgeBase = "display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;";
+        const estadoBadge = !jefe
+          ? `<span style="${badgeBase}background:#EEE;color:#666;">Sin jefe</span>`
+          : jefe.estado === "activo"
+            ? `<span style="${badgeBase}background:#E7F4EE;color:#1F7A57;">Activo</span>`
+            : `<span style="${badgeBase}background:#FDF2E3;color:#A3672D;">Invitado</span>`;
+        const jefeNombre = jefe ? `${jefe.nombre || ""} ${jefe.apellido || ""}`.trim() : "";
+        return `<div class="linea-card" style="margin-bottom:10px;">
+        <div class="linea-card-head" style="cursor:default;">
+          <strong style="flex:1;">${(c.nombre || "").replace(/</g, "&lt;")}</strong>
+          ${estadoBadge}
+        </div>
+        <div style="padding:6px 16px 12px;font-size:12.5px;color:var(--ink-60);">
+          ${(c.plantas || []).length} planta${(c.plantas || []).length === 1 ? "" : "s"}
+          ${jefe ? ` · Jefe: ${jefeNombre.replace(/</g, "&lt;")} (${(jefe.email || "").replace(/</g, "&lt;")})` : ""}
+          ${jefe && jefe.estado === "invitado" ? ` · <a href="javascript:void(0)" onclick="reenviarInvitacionCliente('${c.id}')">Reenviar invitación</a>` : ""}
+        </div>
+      </div>`;
+      }).join("");
+    }
+    async function crearClienteConJefe() {
+      clearAiError();
+      const nombre = document.getElementById("ai-cliente-nombre").value.trim();
+      const rut = document.getElementById("ai-cliente-rut").value.trim();
+      const jefeNombre = document.getElementById("ai-jefe-nombre").value.trim();
+      const jefeApellido = document.getElementById("ai-jefe-apellido").value.trim();
+      const jefeEmail = document.getElementById("ai-jefe-email").value.trim();
+      if (!nombre) { aiError("Falta el nombre de la empresa."); return; }
+      if (!jefeNombre || !jefeEmail) { aiError("Falta el nombre o correo del jefe de mantención."); return; }
+      const btn = document.getElementById("ai-crear-btn");
+      btn.disabled = true; btn.textContent = "Creando…";
+      try {
+        const data = await apiFetch("/clientes", {
+          method: "POST",
+          body: { nombre, rut: rut || undefined, jefe: { nombre: jefeNombre, apellido: jefeApellido || undefined, email: jefeEmail } },
+        });
+        document.getElementById("ai-cliente-nombre").value = "";
+        document.getElementById("ai-cliente-rut").value = "";
+        document.getElementById("ai-jefe-nombre").value = "";
+        document.getElementById("ai-jefe-apellido").value = "";
+        document.getElementById("ai-jefe-email").value = "";
+        toggleAiNuevoCliente();
+        if (data.emailInvitacion && data.emailInvitacion.enviado) {
+          aiSuccess(`Cliente "${nombre}" creado. Se envió la invitación a ${jefeEmail}.`);
+        } else {
+          aiSuccess(`Cliente "${nombre}" creado, pero el correo de invitación no se pudo enviar (${(data.emailInvitacion && data.emailInvitacion.motivo) || "revisa la configuración de correo"}). Puedes reenviarla desde la lista de abajo.`);
+        }
+        await cargarAdminIngenova();
+      } catch (e) {
+        aiError("No se pudo crear el cliente: " + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = "Crear cliente y enviar invitación";
+      }
+    }
+    async function reenviarInvitacionCliente(clienteId) {
+      clearAiError();
+      try {
+        const data = await apiFetch("/clientes/" + clienteId + "/reenviar-invitacion", { method: "POST" });
+        if (data.emailInvitacion && data.emailInvitacion.enviado) {
+          aiSuccess("Invitación reenviada.");
+        } else {
+          aiError("No se pudo reenviar el correo (" + ((data.emailInvitacion && data.emailInvitacion.motivo) || "error desconocido") + ").");
+        }
+      } catch (e) {
+        aiError("No se pudo reenviar la invitación: " + e.message);
+      }
     }
 
     function lineaById(id) { return db.lineas.find(l => l.id === id); }
@@ -5532,6 +5815,39 @@
       if (!sel) return;
       sel.innerHTML = `<option value="">General de planta (no ligado a una línea)</option>` +
         (db.lineas || []).map(l => `<option value="${l.id}">${l.nombre.replace(/</g, "&lt;")}</option>`).join("");
+      onBibliotecaLineaChange();
+    }
+    /** Al elegir una línea en el formulario de subida, permite además elegir
+     * una unidad puntual de esa línea (o dejarlo como documento general de la
+     * línea completa). Si se elige "General de planta", no hay unidades que
+     * mostrar y el selector queda deshabilitado. */
+    function onBibliotecaLineaChange() {
+      const lineaSel = document.getElementById("bib-linea");
+      const unidadSel = document.getElementById("bib-unidad");
+      const categoriaSel = document.getElementById("bib-categoria");
+      if (!lineaSel || !unidadSel) return;
+      const lineaId = lineaSel.value;
+      if (!lineaId) {
+        unidadSel.innerHTML = `<option value="">Toda la línea (general)</option>`;
+        unidadSel.disabled = true;
+        unidadSel.value = "";
+        if (categoriaSel) categoriaSel.disabled = false;
+        return;
+      }
+      const unidades = unidadesDeLinea(lineaId);
+      unidadSel.innerHTML = `<option value="">Toda la línea (general)</option>` +
+        unidades.map(u => `<option value="${u.id}">${u.nombre.replace(/</g, "&lt;")}</option>`).join("");
+      unidadSel.disabled = false;
+      onBibliotecaUnidadChange();
+    }
+    /** La categoría solo aplica a documentos generales (sin unidad puntual) —
+     * ver el comentario del modelo Documento en el schema. Se deshabilita
+     * (no se envía) cuando el documento va ligado a una unidad específica. */
+    function onBibliotecaUnidadChange() {
+      const unidadSel = document.getElementById("bib-unidad");
+      const categoriaSel = document.getElementById("bib-categoria");
+      if (!unidadSel || !categoriaSel) return;
+      categoriaSel.disabled = !!unidadSel.value;
     }
     async function cargarBiblioteca() {
       document.getElementById("biblioteca-content").innerHTML = `<div class="empty-repuestos">Cargando…</div>`;
@@ -5639,17 +5955,26 @@
       const descInput = document.getElementById("bib-desc");
       const categoria = document.getElementById("bib-categoria").value;
       const lineaId = document.getElementById("bib-linea").value;
+      const unidadId = document.getElementById("bib-unidad").value;
       const fd = new FormData();
       fd.append("archivo", file);
-      fd.append("categoria", categoria);
-      if (lineaId) fd.append("lineaId", lineaId);
+      // Si se eligió una unidad puntual, el documento queda ligado a ESA
+      // unidad (no solo a la línea) — se sube por el endpoint de unidad, que
+      // no necesita categoría ni lineaId (se infieren de la unidad misma).
+      if (!unidadId) {
+        fd.append("categoria", categoria);
+        if (lineaId) fd.append("lineaId", lineaId);
+      }
       if (nombreInput && nombreInput.value.trim()) fd.append("nombre", nombreInput.value.trim());
       if (descInput && descInput.value.trim()) fd.append("descripcion", descInput.value.trim());
       const btn = document.getElementById("bib-upload-btn");
       if (btn) { btn.disabled = true; btn.textContent = "Subiendo…"; }
       try {
         const token = getAuthToken();
-        const res = await fetch(API_BASE + "/documentos/planta/" + getPlantaId(), {
+        const url = unidadId
+          ? API_BASE + "/documentos/unidad/" + unidadId
+          : API_BASE + "/documentos/planta/" + getPlantaId();
+        const res = await fetch(url, {
           method: "POST",
           headers: token ? { "Authorization": "Bearer " + token } : {},
           body: fd,
@@ -7274,8 +7599,13 @@
             <option value="seguridad">Seguridad</option>
             <option value="otro">Otro</option>
           </select>
-          <select id="bib-linea">
+          <select id="bib-linea" onchange="onBibliotecaLineaChange()">
             <option value="">General de planta (no ligado a una línea)</option>
+          </select>
+        </div>
+        <div class="row">
+          <select id="bib-unidad" disabled onchange="onBibliotecaUnidadChange()">
+            <option value="">Toda la línea (general)</option>
           </select>
         </div>
         <div class="row">
