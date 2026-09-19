@@ -3880,6 +3880,8 @@
       setAuthToken(null);
       setCurrentRole(null);
       setSavedScreen(null);
+      localStorage.removeItem("ingenova_soporte_admin_token");
+      localStorage.removeItem("ingenova_soporte_cliente_nombre");
       db = null;
       detenerAutoRefrescoJefe();
       aplicarLogoCliente(null); // vuelve al logo de Ingenova para la próxima sesión
@@ -3931,6 +3933,31 @@
       if (rol === "ADMIN_INGENOVA") return "admin-ingenova";
       return "jefe"; // JEFE_MANTENCION
     }
+    /**
+     * Deja al usuario efectivamente adentro de la app con el token ya
+     * emitido (login normal, activación de cuenta, o modo soporte de
+     * Ingenova) y lo manda a la pantalla que le corresponde. Un Jefe de
+     * mantención sin ninguna planta todavía (cliente recién creado) no se
+     * bloquea con error: se le abre directo el formulario para crear la
+     * primera planta.
+     */
+    async function completarIngresoConToken(data) {
+      setAuthToken(data.token);
+      setCurrentRole(data.usuario.rol);
+      const payload = parseJwt(data.token);
+      const screenReal = screenParaRol(data.usuario.rol);
+      setSavedScreen(screenReal);
+      if (payload && payload.plantaIds && payload.plantaIds.length) {
+        await cargarDatosPlanta(payload.plantaIds[0]);
+        goTo(screenReal);
+      } else if (data.usuario.rol === "JEFE_MANTENCION") {
+        try { db.cliente = await apiFetch("/clientes/me"); } catch (e) { /* no crítico */ }
+        goTo(screenReal);
+        openConfiguracion();
+      } else {
+        goTo(screenReal);
+      }
+    }
     async function submitLoginForm() {
       const email = document.getElementById("login-form-email").value.trim();
       const password = document.getElementById("login-form-password").value;
@@ -3954,16 +3981,11 @@
           return;
         }
         const payload = parseJwt(data.token);
-        if (!payload || !payload.plantaIds || !payload.plantaIds.length) {
+        if ((!payload || !payload.plantaIds || !payload.plantaIds.length) && data.usuario.rol !== "JEFE_MANTENCION") {
           errEl.textContent = "Esta cuenta no tiene ninguna planta asignada todavía.";
           return;
         }
-        setAuthToken(data.token);
-        setCurrentRole(data.usuario.rol);
-        const screenReal = screenParaRol(data.usuario.rol);
-        setSavedScreen(screenReal);
-        await cargarDatosPlanta(payload.plantaIds[0]);
-        goTo(screenReal);
+        await completarIngresoConToken(data);
       } catch (e) {
         errEl.textContent = e.message || "Credenciales inválidas.";
       } finally {
@@ -4518,6 +4540,7 @@
       if (screen === "supervisor") renderSupervisorHistorial();
       if (screen === "gerencia") renderGerencia();
       if (screen === "admin-ingenova") cargarAdminIngenova();
+      actualizarBannerSoporte();
     }
 
     /**
@@ -4587,25 +4610,7 @@
       btn.disabled = true; btn.textContent = "Activando…";
       try {
         const data = await apiFetch("/auth/activar-password", { method: "POST", body: { usuarioId: activarCuentaUsuarioId, password: p1 } });
-        setAuthToken(data.token);
-        setCurrentRole(data.usuario.rol);
-        const payload = parseJwt(data.token);
-        const screenReal = screenParaRol(data.usuario.rol);
-        setSavedScreen(screenReal);
-        if (payload && payload.plantaIds && payload.plantaIds.length) {
-          await cargarDatosPlanta(payload.plantaIds[0]);
-          goTo(screenReal);
-        } else if (data.usuario.rol === "JEFE_MANTENCION") {
-          // Recién activado y sin plantas todavía (cliente nuevo): mostramos
-          // su pantalla y abrimos directo el formulario para crear la
-          // primera planta, en vez de dejarlo en un dashboard vacío sin
-          // indicarle qué hacer.
-          try { db.cliente = await apiFetch("/clientes/me"); } catch (e) { /* no crítico */ }
-          goTo(screenReal);
-          openConfiguracion();
-        } else {
-          goTo(screenReal);
-        }
+        await completarIngresoConToken(data);
       } catch (e) {
         errEl.textContent = e.message || "No se pudo activar la cuenta.";
       } finally {
@@ -4667,10 +4672,72 @@
         <div style="padding:6px 16px 12px;font-size:12.5px;color:var(--ink-60);">
           ${(c.plantas || []).length} planta${(c.plantas || []).length === 1 ? "" : "s"}
           ${jefe ? ` · Jefe: ${jefeNombre.replace(/</g, "&lt;")} (${(jefe.email || "").replace(/</g, "&lt;")})` : ""}
-          ${jefe && jefe.estado === "invitado" ? ` · <a href="javascript:void(0)" onclick="reenviarInvitacionCliente('${c.id}')">Reenviar invitación</a>` : ""}
+          ${jefe && jefe.estado === "invitado" ? ` · <a href="javascript:void(0)" onclick="reenviarInvitacionJefe('${jefe.id}')">Reenviar invitación</a>` : ""}
+          ${jefe ? `<div style="margin-top:6px;"><a href="javascript:void(0)" onclick="entrarComoJefe('${c.id}', '${(c.nombre || "").replace(/'/g, "\\'").replace(/</g, "&lt;")}')">Entrar como Jefe de mantención (modo soporte) →</a></div>` : ""}
         </div>
       </div>`;
       }).join("");
+    }
+    async function reenviarInvitacionJefe(usuarioId) {
+      clearAiError();
+      try {
+        const data = await apiFetch("/tecnicos/" + usuarioId, { method: "PATCH", body: { estado: "invitado" } });
+        if (data.emailInvitacion && data.emailInvitacion.enviado) {
+          aiSuccess("Invitación reenviada.");
+        } else {
+          aiError("No se pudo reenviar el correo (" + ((data.emailInvitacion && data.emailInvitacion.motivo) || "error desconocido") + ").");
+        }
+        await cargarAdminIngenova();
+      } catch (e) {
+        aiError("No se pudo reenviar la invitación: " + e.message);
+      }
+    }
+    /**
+     * "Modo soporte": entra a la app con las mismas atribuciones que el Jefe
+     * de mantención real de ese cliente (crear, editar, eliminar todo lo que
+     * él podría), sin crear ninguna cuenta nueva. Guarda la sesión de
+     * administración actual para poder volver a ella con un click — igual
+     * que el soporte de un ERP que entra con una cuenta de soporte con las
+     * mismas atribuciones que el administrador, y después vuelve a su
+     * propia sesión.
+     */
+    async function entrarComoJefe(clienteId, clienteNombre) {
+      clearAiError();
+      try {
+        const data = await apiFetch("/clientes/" + clienteId + "/entrar-como-jefe", { method: "POST" });
+        localStorage.setItem("ingenova_soporte_admin_token", getAuthToken());
+        localStorage.setItem("ingenova_soporte_cliente_nombre", clienteNombre || "");
+        await completarIngresoConToken(data);
+      } catch (e) {
+        aiError("No se pudo entrar como Jefe de mantención: " + e.message);
+      }
+    }
+    /** Restaura la sesión de administración guardada al entrar en modo soporte. */
+    function volverAAdministracion() {
+      const adminToken = localStorage.getItem("ingenova_soporte_admin_token");
+      if (!adminToken) return;
+      localStorage.removeItem("ingenova_soporte_admin_token");
+      localStorage.removeItem("ingenova_soporte_cliente_nombre");
+      setAuthToken(adminToken);
+      setCurrentRole("ADMIN_INGENOVA");
+      setSavedScreen("admin-ingenova");
+      goTo("admin-ingenova");
+    }
+    function actualizarBannerSoporte() {
+      let banner = document.getElementById("banner-soporte");
+      const adminToken = localStorage.getItem("ingenova_soporte_admin_token");
+      if (!adminToken) {
+        if (banner) banner.remove();
+        return;
+      }
+      const clienteNombre = (localStorage.getItem("ingenova_soporte_cliente_nombre") || "").replace(/</g, "&lt;");
+      if (!banner) {
+        banner = document.createElement("div");
+        banner.id = "banner-soporte";
+        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#1A1A1A;color:#fff;padding:8px 16px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:10px;";
+        document.body.prepend(banner);
+      }
+      banner.innerHTML = `<span>Modo soporte Ingenova${clienteNombre ? " — viendo como el Jefe de mantención de <strong>" + clienteNombre + "</strong>" : ""}</span><a href="javascript:void(0)" onclick="volverAAdministracion()" style="color:#fff;text-decoration:underline;">Volver a administración</a>`;
     }
     async function crearClienteConJefe() {
       clearAiError();
@@ -4706,20 +4773,6 @@
         btn.disabled = false; btn.textContent = "Crear cliente y enviar invitación";
       }
     }
-    async function reenviarInvitacionCliente(clienteId) {
-      clearAiError();
-      try {
-        const data = await apiFetch("/clientes/" + clienteId + "/reenviar-invitacion", { method: "POST" });
-        if (data.emailInvitacion && data.emailInvitacion.enviado) {
-          aiSuccess("Invitación reenviada.");
-        } else {
-          aiError("No se pudo reenviar el correo (" + ((data.emailInvitacion && data.emailInvitacion.motivo) || "error desconocido") + ").");
-        }
-      } catch (e) {
-        aiError("No se pudo reenviar la invitación: " + e.message);
-      }
-    }
-
     function lineaById(id) { return db.lineas.find(l => l.id === id); }
     function unidadById(id) { return db.unidades.find(u => u.id === id); }
     function unidadesDeLinea(lineaId) { return db.unidades.filter(u => u.lineaId === lineaId); }
