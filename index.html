@@ -3917,7 +3917,12 @@
      * el botón "Operario" (reportar falla) funciona directo en ese equipo. */
     function copiarLinkOperario() {
       const plantaId = getPlantaId();
-      if (!plantaId) return;
+      // Antes se salía en silencio: el botón no hacía absolutamente nada y no
+      // había forma de saber por qué.
+      if (!plantaId) {
+        showSaveToast("Primero crea una planta en Configuración; el link del dispositivo se genera para una planta.");
+        return;
+      }
       const url = location.origin + location.pathname + "?planta=" + encodeURIComponent(plantaId);
       const avisar = () => showSaveToast("Link copiado. Envíalo por WhatsApp y ábrelo una vez en el dispositivo que quieres configurar.");
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -3975,12 +3980,27 @@
         await cargarDatosPlanta(payload.plantaIds[0]);
         goTo(screenReal);
       } else if (data.usuario.rol === "JEFE_MANTENCION") {
+        // Sin plantas: hay que limpiar el plantaId que pueda haber quedado
+        // guardado en este navegador de una sesión anterior (incluso de otro
+        // cliente). Si no, las pantallas que dependen de la planta piden una
+        // que este usuario no tiene y responden "No tienes acceso a esta planta".
+        setPlantaId(null);
+        ensureDb();
         try { db.cliente = await apiFetch("/clientes/me"); } catch (e) { /* no crítico */ }
         goTo(screenReal);
         openConfiguracion();
       } else {
         goTo(screenReal);
       }
+    }
+    /**
+     * Varias pantallas del jefe (biblioteca, métricas, historial, asignar
+     * trabajo, configurar dispositivo) no tienen sentido hasta que exista una
+     * planta. Antes fallaban con errores del servidor o simplemente no hacían
+     * nada; ahora avisan qué falta.
+     */
+    function hayPlantaActiva() {
+      return !!getPlantaId();
     }
     async function submitLoginForm() {
       const email = document.getElementById("login-form-email").value.trim();
@@ -5388,6 +5408,7 @@
     }
 
     function openAdmin() {
+      if (!hayPlantaActiva()) { showSaveToast("Primero crea una planta en Configuración; las líneas y unidades se cargan dentro de una planta."); return; }
       clearAdminError();
       pendingDelete = null;
       expandedUnidades = new Set();
@@ -5965,6 +5986,12 @@
       categoriaSel.disabled = !!unidadSel.value;
     }
     async function cargarBiblioteca() {
+      if (!hayPlantaActiva()) {
+        bibliotecaData = [];
+        document.getElementById("biblioteca-content").innerHTML =
+          `<div class="empty-repuestos">Todavía no hay una planta creada. Ve a Configuración y crea la primera planta para empezar a cargar documentos.</div>`;
+        return;
+      }
       document.getElementById("biblioteca-content").innerHTML = `<div class="empty-repuestos">Cargando…</div>`;
       try {
         bibliotecaData = await apiFetch("/documentos/planta/" + getPlantaId());
@@ -6548,7 +6575,14 @@
       const cont = document.getElementById("metricas-content");
       if (!cont) return;
       if (!metricasData) { cont.innerHTML = `<div class="empty-repuestos">Sin datos.</div>`; return; }
-      const r = metricasData.resumen;
+      // Defensa: si el resumen viniera incompleto (cliente sin plantas, o una
+      // versión vieja del backend), las tarjetas mostraban "undefined" y
+      // "undefined de NaN". Se parte de un resumen en cero y se encima lo que
+      // realmente llegó.
+      const r = Object.assign({
+        mttrHoras: null, tiempoRespuestaHoras: null, pmComplianceRate: null, ratioCorrectivoPct: null,
+        totalCorrectivas: 0, totalPreventivas: 0, correctivasAbiertas: 0, preventivasAtrasadas: 0,
+      }, metricasData.resumen || {});
 
       let html = `<div class="kpi-row cols-5">
     <div class="kpi-card accent">
@@ -6740,6 +6774,7 @@
       if (el) { el.style.display = "none"; el.textContent = ""; }
     }
     function openAdminTec() {
+      if (!hayPlantaActiva()) { showSaveToast("Primero crea una planta en Configuración; los técnicos se asignan a las plantas de la empresa."); return; }
       clearTecAdminError();
       pendingDelete = null;
       expandedTecnicos = new Set();
@@ -6967,6 +7002,7 @@
       if (el) { el.style.display = "none"; el.textContent = ""; }
     }
     function openAdminAsignar() {
+      if (!hayPlantaActiva()) { showSaveToast("Primero crea una planta y sus líneas en Configuración; los trabajos se asignan sobre las unidades de una línea."); return; }
       clearAsignarError();
       pendingDelete = null;
       checklistDraft = [];
