@@ -3801,9 +3801,29 @@
       let data = null;
       try { data = await res.json(); } catch (e) { /* respuesta sin cuerpo, ej. 204 */ }
       if (!res.ok) {
+        // Sesión vencida (el token dura 12 h): en vez de mostrar "Token
+        // inválido o expirado" en cada pantalla y dejar la app a medio
+        // funcionar, se cierra sesión limpio y se vuelve al inicio. Se
+        // excluyen los endpoints de autenticación, donde un 401 significa
+        // "credenciales incorrectas" y ese mensaje sí debe mostrarse.
+        const esEndpointDeAuth = path.startsWith("/auth/login") || path.startsWith("/auth/activar") || path.startsWith("/auth/invitacion");
+        if (res.status === 401 && token && !esEndpointDeAuth) {
+          manejarSesionExpirada();
+          throw new Error("Tu sesión expiró. Vuelve a iniciar sesión.");
+        }
         throw new Error((data && data.error) || ("Error " + res.status));
       }
       return data;
+    }
+
+    /** Cierra la sesión vencida y devuelve a la pantalla de inicio con aviso. */
+    let avisandoSesionExpirada = false;
+    function manejarSesionExpirada() {
+      if (avisandoSesionExpirada) return; // varias llamadas en paralelo pueden fallar a la vez
+      avisandoSesionExpirada = true;
+      try { cerrarSesion(); } catch (e) { /* si algo falla, igual avisamos */ }
+      showSaveToast("Tu sesión expiró por seguridad. Vuelve a iniciar sesión.");
+      setTimeout(() => { avisandoSesionExpirada = false; }, 3000);
     }
 
     function emptyDb() {
@@ -3880,9 +3900,12 @@
       setAuthToken(null);
       setCurrentRole(null);
       setSavedScreen(null);
-      localStorage.removeItem("ingenova_soporte_admin_token");
-      localStorage.removeItem("ingenova_soporte_cliente_nombre");
-      db = null;
+      limpiarModoSoporte();
+      // Se deja un `db` vacío en vez de null: si alguna pantalla alcanza a
+      // re-dibujarse justo después de cerrar sesión (o cuando la sesión vence
+      // a mitad de una carga), leer db.lineas/db.ordenes de un null reventaba
+      // el render. Con el esqueleto vacío simplemente no muestra nada.
+      db = emptyDb();
       detenerAutoRefrescoJefe();
       aplicarLogoCliente(null); // vuelve al logo de Ingenova para la próxima sesión
       goTo("login");
@@ -3931,6 +3954,7 @@
       if (rol === "GERENCIA") return "gerencia";
       if (rol === "SUPERVISOR") return "supervisor";
       if (rol === "ADMIN_INGENOVA") return "admin-ingenova";
+      if (rol === "TECNICO") return "tecnico"; // explícito: antes caía en el "jefe" de abajo
       return "jefe"; // JEFE_MANTENCION
     }
     /**
@@ -3969,6 +3993,7 @@
       btn.disabled = true; btn.textContent = "Ingresando...";
       try {
         const data = await apiFetch("/auth/login", { method: "POST", body: { email, password } });
+        limpiarModoSoporte(); // un login nuevo cierra cualquier sesión de soporte anterior
         // ADMIN_INGENOVA (staff de Ingenova) no pertenece a ningún cliente ni
         // planta — su pantalla es el panel de administración, no el
         // dashboard de una planta, así que no aplica el chequeo de plantaIds
@@ -4610,6 +4635,7 @@
       btn.disabled = true; btn.textContent = "Activando…";
       try {
         const data = await apiFetch("/auth/activar-password", { method: "POST", body: { usuarioId: activarCuentaUsuarioId, password: p1 } });
+        limpiarModoSoporte(); // activar una cuenta cierra cualquier sesión de soporte anterior
         await completarIngresoConToken(data);
       } catch (e) {
         errEl.textContent = e.message || "No se pudo activar la cuenta.";
@@ -4716,17 +4742,35 @@
     function volverAAdministracion() {
       const adminToken = localStorage.getItem("ingenova_soporte_admin_token");
       if (!adminToken) return;
-      localStorage.removeItem("ingenova_soporte_admin_token");
-      localStorage.removeItem("ingenova_soporte_cliente_nombre");
+      limpiarModoSoporte();
+      // Si la sesión de administración quedó vencida mientras se trabajaba en
+      // modo soporte, no sirve de nada restaurarla: se cierra sesión limpio en
+      // vez de dejar el panel con errores de "token expirado".
+      if (!tokenValido(adminToken)) {
+        cerrarSesion();
+        return;
+      }
       setAuthToken(adminToken);
       setCurrentRole("ADMIN_INGENOVA");
       setSavedScreen("admin-ingenova");
+      db = emptyDb(); // se sale del contexto del cliente que se estaba revisando
+      detenerAutoRefrescoJefe();
+      aplicarLogoCliente(null); // vuelve al logo de Ingenova, no el del cliente que se estaba revisando
       goTo("admin-ingenova");
     }
+    /**
+     * Muestra (o quita) la franja de "modo soporte". Va en el flujo normal
+     * del documento, arriba de todo: empuja la barra superior hacia abajo en
+     * vez de taparla — con position:fixed quedaba encima del topbar y no
+     * dejaba ver las pestañas. Nunca se muestra en el panel de
+     * administración, donde no tiene sentido (ahí ya estás en tu sesión de
+     * Ingenova).
+     */
     function actualizarBannerSoporte() {
       let banner = document.getElementById("banner-soporte");
       const adminToken = localStorage.getItem("ingenova_soporte_admin_token");
-      if (!adminToken) {
+      const enPantallaAdmin = !!document.querySelector("#screen-admin-ingenova.active");
+      if (!adminToken || enPantallaAdmin) {
         if (banner) banner.remove();
         return;
       }
@@ -4734,10 +4778,18 @@
       if (!banner) {
         banner = document.createElement("div");
         banner.id = "banner-soporte";
-        banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#1A1A1A;color:#fff;padding:8px 16px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:10px;";
+        banner.style.cssText = "background:#1A1A1A;color:#fff;padding:8px 16px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;text-align:center;";
         document.body.prepend(banner);
       }
-      banner.innerHTML = `<span>Modo soporte Ingenova${clienteNombre ? " — viendo como el Jefe de mantención de <strong>" + clienteNombre + "</strong>" : ""}</span><a href="javascript:void(0)" onclick="volverAAdministracion()" style="color:#fff;text-decoration:underline;">Volver a administración</a>`;
+      banner.innerHTML = `<span>Modo soporte Ingenova${clienteNombre ? " — viendo como el Jefe de mantención de <strong>" + clienteNombre + "</strong>" : ""}</span><a href="javascript:void(0)" onclick="volverAAdministracion()" style="color:#fff;text-decoration:underline;white-space:nowrap;">Volver a administración</a>`;
+    }
+    /** Cierra cualquier sesión de soporte pendiente (al iniciar sesión de nuevo,
+     *  el modo soporte anterior ya no aplica y su banner no debe reaparecer). */
+    function limpiarModoSoporte() {
+      localStorage.removeItem("ingenova_soporte_admin_token");
+      localStorage.removeItem("ingenova_soporte_cliente_nombre");
+      const banner = document.getElementById("banner-soporte");
+      if (banner) banner.remove();
     }
     async function crearClienteConJefe() {
       clearAiError();
@@ -5252,7 +5304,14 @@
       opState = { linea: null, problema: null };
       const plantaId = getPlantaId();
       if (!plantaId || db.lineas.length === 0) {
-        document.getElementById("op-lines").innerHTML = `<div class="empty-lineas">Este dispositivo no tiene una planta configurada. Pide al jefe de mantención que inicie sesión primero en este mismo dispositivo.</div>`;
+        // Dos situaciones distintas, con soluciones distintas: el dispositivo
+        // nunca se configuró (hay que abrir el link "Configurar dispositivo"
+        // que genera el jefe), o sí está configurado pero la planta todavía
+        // no tiene líneas cargadas. El mensaje anterior decía siempre lo
+        // primero y mandaba a iniciar sesión, que ya no es como funciona.
+        document.getElementById("op-lines").innerHTML = !plantaId
+          ? `<div class="empty-lineas">Este dispositivo todavía no está configurado. Pide al jefe de mantención que te envíe el link "Configurar dispositivo" y ábrelo una vez en este equipo.</div>`
+          : `<div class="empty-lineas">Esta planta todavía no tiene líneas cargadas. Avísale al jefe de mantención.</div>`;
         document.getElementById("op-problems").innerHTML = "";
         document.getElementById("op-obs").value = "";
         const btn = document.getElementById("alarm-btn");
@@ -5831,6 +5890,9 @@
         adminSuccess("Documento subido.");
       } catch (e) {
         adminError("No se pudo subir el documento: " + e.message);
+        // Si falló, hay que devolver el botón a su estado normal: si no,
+        // queda en "Subiendo…" deshabilitado y no se puede reintentar.
+        if (btn) { btn.disabled = false; btn.textContent = "Subir"; }
       }
     }
     /* ---------------- BIBLIOTECA T\u00c9CNICA GENERAL (jefe + t\u00e9cnico) ---------------- */
@@ -6267,6 +6329,7 @@
         const nombre = nombreInput.value.trim();
         if (!nombre) { configError("Escribe un nombre para la nueva planta."); return; }
         const direccion = direccionInput.value.trim() || null;
+        const eraLaPrimeraPlanta = !getPlantaId();
         const planta = await apiFetch("/plantas", { method: "POST", body: { nombre, direccion } });
         // El backend ya asignó automáticamente al jefe a esta planta nueva, pero
         // su token (JWT) todavía no lo sabe — lo refrescamos para que pueda
@@ -6275,10 +6338,23 @@
           const { token } = await apiFetch("/auth/refrescar", { method: "POST" });
           setAuthToken(token);
         } catch (e) { /* si falla el refresco, igual sigue funcionando hasta el próximo login */ }
-        db.plantas = db.plantas || [];
-        db.plantas.push(planta);
         nombreInput.value = "";
         direccionInput.value = "";
+        if (eraLaPrimeraPlanta) {
+          // Jefe recién activado creando la primera planta de su empresa: hasta
+          // este momento no tenía ninguna planta activa, así que `db` está
+          // vacío y no hay plantaId guardado. Cargamos la planta recién creada
+          // como la activa — si no, quedaría con el dashboard vacío y, al
+          // recargar la página, la sesión no se podría restaurar.
+          await cargarDatosPlanta(planta.id);
+          closeConfiguracion();
+          renderJefe("general");
+          actualizarSelectorPlantas();
+          showSaveToast(`Planta "${nombre}" creada. Ya puedes empezar a cargar tus líneas.`);
+          return;
+        }
+        db.plantas = db.plantas || [];
+        db.plantas.push(planta);
         renderConfiguracion();
         actualizarSelectorPlantas();
         configSuccess(`Planta "${nombre}" agregada. Puedes cambiarte a ella con el selector junto al logo.`);
