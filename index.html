@@ -3811,7 +3811,10 @@
           manejarSesionExpirada();
           throw new Error("Tu sesión expiró. Vuelve a iniciar sesión.");
         }
-        throw new Error((data && data.error) || ("Error " + res.status));
+        const err = new Error((data && data.error) || ("Error " + res.status));
+        err.status = res.status;
+        err.data = data; // el cuerpo completo, por si el llamador necesita el detalle
+        throw err;
       }
       return data;
     }
@@ -4720,9 +4723,89 @@
           ${jefe ? ` · Jefe: ${jefeNombre.replace(/</g, "&lt;")} (${(jefe.email || "").replace(/</g, "&lt;")})` : ""}
           ${jefe && jefe.estado === "invitado" ? ` · <a href="javascript:void(0)" onclick="reenviarInvitacionJefe('${jefe.id}')">Reenviar invitación</a>` : ""}
           ${jefe ? `<div style="margin-top:6px;"><a href="javascript:void(0)" onclick="entrarComoJefe('${c.id}', '${(c.nombre || "").replace(/'/g, "\\'").replace(/</g, "&lt;")}')">Entrar como Jefe de mantención (modo soporte) →</a></div>` : ""}
+          <div style="margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;">
+            ${jefe ? `<a href="javascript:void(0)" onclick="toggleEditarCorreoJefe('${c.id}')">Corregir correo del jefe</a>` : ""}
+            <a href="javascript:void(0)" style="color:#A32D2D;" onclick="eliminarCliente('${c.id}')">${aiPendingDeleteCliente === c.id ? "Confirmar eliminación" : "Eliminar empresa"}</a>
+          </div>
+          ${jefe ? `<div id="ec-form-${c.id}" style="display:none;margin-top:10px;">
+            <div class="documento-upload-form" style="padding:0;">
+              <input type="email" id="ec-email-${c.id}" value="${(jefe.email || "").replace(/"/g, "&quot;")}" placeholder="Correo del jefe de mantención">
+              <div class="row">
+                <button id="ec-btn-${c.id}" onclick="guardarCorreoJefe('${c.id}', '${jefe.id}')">Guardar y reenviar invitación</button>
+              </div>
+            </div>
+          </div>` : ""}
         </div>
       </div>`;
       }).join("");
+    }
+    function toggleEditarCorreoJefe(clienteId) {
+      const form = document.getElementById("ec-form-" + clienteId);
+      if (!form) return;
+      form.style.display = form.style.display === "none" ? "block" : "none";
+    }
+    /**
+     * Corrige el correo del jefe de mantención de un cliente. Es el caso de
+     * un tipeo mal puesto al dar de alta la empresa: la invitación se fue a
+     * una dirección que no existe y no había forma de arreglarlo desde la
+     * app. Al guardar se reenvía la invitación a la dirección corregida.
+     */
+    async function guardarCorreoJefe(clienteId, jefeId) {
+      clearAiError();
+      const email = document.getElementById("ec-email-" + clienteId).value.trim();
+      if (!email) { aiError("Escribe el correo del jefe de mantención."); return; }
+      const btn = document.getElementById("ec-btn-" + clienteId);
+      btn.disabled = true; btn.textContent = "Guardando…";
+      try {
+        await apiFetch("/tecnicos/" + jefeId, { method: "PATCH", body: { email } });
+        const data = await apiFetch("/tecnicos/" + jefeId, { method: "PATCH", body: { estado: "invitado" } });
+        if (data.emailInvitacion && data.emailInvitacion.enviado) {
+          aiSuccess(`Correo corregido. Se reenvió la invitación a ${email}.`);
+        } else {
+          aiError(`Correo corregido, pero no se pudo enviar la invitación (${(data.emailInvitacion && data.emailInvitacion.motivo) || "error desconocido"}).`);
+        }
+        await cargarAdminIngenova();
+      } catch (e) {
+        aiError("No se pudo corregir el correo: " + e.message);
+        btn.disabled = false; btn.textContent = "Guardar y reenviar invitación";
+      }
+    }
+    /**
+     * Elimina una empresa completa. Dos pasos: el primer clic pregunta al
+     * servidor qué se perdería y lo muestra; el segundo confirma.
+     */
+    let aiPendingDeleteCliente = null;
+    async function eliminarCliente(clienteId) {
+      clearAiError();
+      try {
+        if (aiPendingDeleteCliente !== clienteId) {
+          try {
+            await apiFetch("/clientes/" + clienteId, { method: "DELETE" });
+          } catch (e) {
+            const d = e.data || {};
+            const detalle = d.requiereConfirmacion
+              ? ` Se perderían: ${d.plantas || 0} planta(s), ${d.usuarios || 0} usuario(s), ${d.ordenes || 0} orden(es), ${d.correctivas || 0} correctiva(s) y ${d.documentos || 0} documento(s).`
+              : "";
+            aiPendingDeleteCliente = clienteId;
+            renderAiClientes();
+            aiError(e.message + detalle + " Vuelve a hacer clic en \"Confirmar eliminación\" para borrarla definitivamente.");
+            return;
+          }
+          // Si el servidor borró sin pedir confirmación (empresa vacía), listo.
+          aiPendingDeleteCliente = null;
+          aiSuccess("Empresa eliminada.");
+          await cargarAdminIngenova();
+          return;
+        }
+        await apiFetch("/clientes/" + clienteId + "?force=true", { method: "DELETE" });
+        aiPendingDeleteCliente = null;
+        aiSuccess("Empresa eliminada con todo su contenido.");
+        await cargarAdminIngenova();
+      } catch (e) {
+        aiPendingDeleteCliente = null;
+        aiError("No se pudo eliminar la empresa: " + e.message);
+        renderAiClientes();
+      }
     }
     async function reenviarInvitacionJefe(usuarioId) {
       clearAiError();
