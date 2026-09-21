@@ -1667,6 +1667,168 @@
       border-color: var(--orange);
     }
 
+    /* ---------- Formularios de inocuidad ---------- */
+    .admin-btn-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 17px;
+      height: 17px;
+      padding: 0 5px;
+      margin-left: 5px;
+      border-radius: 9px;
+      background: var(--red);
+      color: #fff;
+      font-size: 10.5px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .form-tabs {
+      display: flex;
+      gap: 6px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 16px;
+    }
+
+    .form-tab {
+      appearance: none;
+      border: 0;
+      background: none;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink-60);
+      padding: 9px 12px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .form-tab.active {
+      color: var(--black);
+      border-bottom-color: var(--red);
+    }
+
+    .pauta-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      background: var(--white);
+    }
+
+    .pauta-card-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .pauta-card-head strong {
+      flex: 1;
+      min-width: 140px;
+      font-size: 14px;
+    }
+
+    .pauta-meta {
+      font-size: 12px;
+      color: var(--ink-60);
+      margin-top: 5px;
+      line-height: 1.5;
+    }
+
+    .chip {
+      display: inline-block;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      padding: 3px 9px;
+      border-radius: 20px;
+      background: #F1F1EF;
+      color: var(--ink-70);
+      white-space: nowrap;
+    }
+
+    .chip.verde { background: #E7F4EE; color: #1F7A57; }
+    .chip.ambar { background: #FDF2E3; color: #A3672D; }
+    .chip.rojo { background: #FDE8E4; color: #A32D2D; }
+
+    .item-editor {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      background: #FBFBFA;
+    }
+
+    .item-editor .fila {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .item-editor .fila input[type="text"] {
+      flex: 1;
+      min-width: 150px;
+    }
+
+    .item-editor select {
+      min-width: 118px;
+    }
+
+    .respuesta-row {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 11px 13px;
+      margin-bottom: 8px;
+    }
+
+    .respuesta-row.no-conforme {
+      border-color: #F0B9AD;
+      background: #FFF8F6;
+    }
+
+    .respuesta-row .cabecera {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+
+    .respuesta-row .cabecera .texto {
+      flex: 1;
+      min-width: 140px;
+      font-size: 13px;
+    }
+
+    .conforme-toggle {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .conforme-toggle button {
+      appearance: none;
+      border: 0;
+      background: var(--white);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink-60);
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+
+    .conforme-toggle button.sel-ok { background: #1F7A57; color: #fff; }
+    .conforme-toggle button.sel-no { background: var(--red); color: #fff; }
+
     .admin-overlay {
       position: fixed;
       inset: 0;
@@ -3275,6 +3437,14 @@
             </svg>
             Biblioteca técnica
           </button>
+          <button class="admin-btn" onclick="openFormularios()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 11l3 3L22 4" />
+              <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+            </svg>
+            Formularios
+            <span class="admin-btn-badge" id="formularios-badge" style="display:none;">0</span>
+          </button>
           <button class="admin-btn" onclick="openMetricas()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 3v18h18" />
@@ -3389,11 +3559,48 @@
           </svg>
           Biblioteca técnica
         </button>
+        <!-- Formularios de inocuidad que le tocan en el período vigente. La
+             sección aparece solo si hay alguno, para no agregar ruido a la
+             pantalla del técnico cuando la planta no los usa. -->
+        <div id="tec-formularios-wrap" style="display:none;">
+          <div class="tec-section-head">
+            <h3>Formularios por completar</h3>
+          </div>
+          <div id="tec-formularios-list"></div>
+        </div>
         <div id="task-list"></div>
         <div class="tec-section-head">
           <h3>Correctivas abiertas</h3>
         </div>
         <div id="correctivas-tec-list"></div>
+      </div>
+    </div>
+
+    <!-- El técnico completa el formulario desde su teléfono. -->
+    <div class="detail-overlay" id="completar-form-overlay" onclick="if(event.target===this) cerrarCompletarFormulario()">
+      <div class="detail-sheet">
+        <div class="sheet-handle"></div>
+        <button class="sheet-close" onclick="cerrarCompletarFormulario()">✕</button>
+        <div class="sheet-head">
+          <h3 id="completar-form-titulo"></h3>
+          <div class="meta" id="completar-form-meta"></div>
+        </div>
+        <div id="completar-form-items"></div>
+        <div class="obs-box">
+          <label>Observación general (opcional)</label>
+          <textarea id="completar-form-obs" placeholder="Ej: falta reponer una llave que se dobló en la semana."></textarea>
+        </div>
+        <div class="obs-box" id="completar-form-foto-box">
+          <label id="completar-form-foto-label">Foto (opcional)</label>
+          <input type="file" id="completar-form-foto" accept=".png,.jpg,.jpeg,.webp">
+        </div>
+        <div id="completar-form-error"
+          style="display:none; background:#FDE8E4; color:#A32D2D; font-size:12.5px; padding:10px 14px; border-radius:10px; margin-bottom:10px;">
+        </div>
+        <div class="sheet-actions">
+          <button class="btn btn-ghost" onclick="cerrarCompletarFormulario()">Cancelar</button>
+          <button class="btn btn-primary" id="completar-form-btn" onclick="enviarFormularioCompletado()">Enviar</button>
+        </div>
       </div>
     </div>
 
@@ -4628,9 +4835,9 @@
     function goTo(screen) {
       document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
       document.getElementById("screen-" + screen).classList.add("active");
-      if (screen === "jefe") { renderJefe("general"); iniciarAutoRefrescoJefe(); }
+      if (screen === "jefe") { renderJefe("general"); iniciarAutoRefrescoJefe(); actualizarBadgeFormularios(); }
       else { detenerAutoRefrescoJefe(); }
-      if (screen === "tecnico") renderTecnico();
+      if (screen === "tecnico") { renderTecnico(); cargarMisFormularios(); }
       if (screen === "operario") prepararOperario();
       if (screen === "tecnico-login") { tecLoginStep = "list"; tecLoginTecnicoId = null; prepararTecLogin(); }
       if (screen === "supervisor") renderSupervisorHistorial();
@@ -4741,6 +4948,654 @@
         errEl.textContent = e.message || "No se pudo activar la cuenta.";
       } finally {
         btn.disabled = false; btn.textContent = "Activar y entrar";
+      }
+    }
+
+    /* ---------------- FORMULARIOS DE INOCUIDAD (técnico) ---------------- */
+    let misFormularios = null;
+    let formularioAbierto = null;
+    let respuestasDraft = [];
+
+    /** Carga lo que le toca al técnico en el período vigente. Es "best effort":
+     *  si falla, su pantalla de tareas sigue funcionando igual. */
+    async function cargarMisFormularios() {
+      try {
+        misFormularios = await apiFetch("/pautas/mias");
+      } catch (e) {
+        misFormularios = [];
+      }
+      renderMisFormularios();
+    }
+    function renderMisFormularios() {
+      const wrap = document.getElementById("tec-formularios-wrap");
+      const cont = document.getElementById("tec-formularios-list");
+      if (!wrap || !cont) return;
+      const lista = misFormularios || [];
+      if (!lista.length) { wrap.style.display = "none"; return; }
+      wrap.style.display = "";
+      cont.innerHTML = lista.map((f, i) => {
+        const p = f.pauta;
+        const datos = [p.codigoProcedimiento, p.revision ? "Rev. " + p.revision : ""].filter(Boolean).join(" · ");
+        return `<div class="pauta-card">
+        <div class="pauta-card-head">
+          <strong>${(p.nombre || "").replace(/</g, "&lt;")}</strong>
+          ${f.completado ? `<span class="chip verde">Completado</span>` : `<span class="chip ambar">Pendiente</span>`}
+        </div>
+        <div class="pauta-meta">
+          ${f.periodoEtiqueta}${datos ? " · " + datos.replace(/</g, "&lt;") : ""}
+          ${p.alcance === "grupal" ? " · uno solo para toda la planta" : ""}
+        </div>
+        ${f.completado
+            ? `<div class="pauta-meta" style="margin-top:6px;">Ya fue enviado${f.registro && f.registro.completadoPor ? " por " + `${f.registro.completadoPor.nombre || ""} ${f.registro.completadoPor.apellido || ""}`.trim().replace(/</g, "&lt;") : ""}.</div>`
+            : `<div style="margin-top:9px;"><button class="btn btn-primary" style="padding:8px 16px;font-size:13px;" onclick="abrirCompletarFormulario(${i})">Completar</button></div>`}
+      </div>`;
+      }).join("");
+    }
+
+    function cerrarCompletarFormulario() {
+      document.getElementById("completar-form-overlay").classList.remove("open");
+      formularioAbierto = null;
+    }
+    function completarFormError(msg) {
+      const el = document.getElementById("completar-form-error");
+      if (el) { el.textContent = msg; el.style.display = "block"; }
+    }
+    function abrirCompletarFormulario(indice) {
+      const f = (misFormularios || [])[indice];
+      if (!f) return;
+      formularioAbierto = f;
+      const p = f.pauta;
+      respuestasDraft = (p.items || []).map(() => ({ valor: "", conforme: true, observacion: "" }));
+
+      document.getElementById("completar-form-titulo").textContent = p.nombre || "Formulario";
+      const datos = [f.periodoEtiqueta, p.codigoProcedimiento, p.revision ? "Rev. " + p.revision : ""].filter(Boolean).join(" · ");
+      document.getElementById("completar-form-meta").textContent = datos;
+      document.getElementById("completar-form-obs").value = "";
+      const inputFoto = document.getElementById("completar-form-foto");
+      if (inputFoto) inputFoto.value = "";
+      // La foto se pide según lo definido en la pauta: obligatoria, opcional o
+      // directamente no se pide (que es lo razonable cuando el formulario
+      // tiene decenas de ítems y una foto por ítem no aportaría nada).
+      const cajaFoto = document.getElementById("completar-form-foto-box");
+      const labelFoto = document.getElementById("completar-form-foto-label");
+      if (cajaFoto) cajaFoto.style.display = p.foto === "no" ? "none" : "";
+      if (labelFoto) labelFoto.textContent = p.foto === "obligatoria" ? "Foto (obligatoria)" : "Foto (opcional)";
+      document.getElementById("completar-form-error").style.display = "none";
+      renderItemsCompletar();
+      document.getElementById("completar-form-overlay").classList.add("open");
+    }
+    function renderItemsCompletar() {
+      const cont = document.getElementById("completar-form-items");
+      if (!cont || !formularioAbierto) return;
+      const items = formularioAbierto.pauta.items || [];
+      cont.innerHTML = items.map((it, i) => {
+        const r = respuestasDraft[i] || {};
+        const campoValor = it.tipo === "marca" ? "" : `
+        <div style="margin-top:7px;">
+          <input type="${it.tipo === "numero" ? "number" : "text"}" id="resp-valor-${i}"
+            inputmode="${it.tipo === "numero" ? "numeric" : "text"}"
+            placeholder="${it.tipo === "numero" ? (it.valorEsperado ? "Deberían ser " + it.valorEsperado : "Cantidad") : "Escribe aquí"}"
+            value="${(r.valor || "").replace(/"/g, "&quot;")}" onchange="onValorRespuestaChange(${i})">
+        </div>`;
+        return `<div class="respuesta-row ${r.conforme ? "" : "no-conforme"}" id="resp-row-${i}">
+        <div class="cabecera">
+          <span class="texto">${(it.texto || "").replace(/</g, "&lt;")}</span>
+          <span class="conforme-toggle">
+            <button type="button" class="${r.conforme ? "sel-ok" : ""}" onclick="marcarRespuesta(${i}, true)">Conforme</button>
+            <button type="button" class="${r.conforme ? "" : "sel-no"}" onclick="marcarRespuesta(${i}, false)">No</button>
+          </span>
+        </div>
+        ${campoValor}
+        ${r.conforme ? "" : `<div style="margin-top:7px;">
+          <input type="text" id="resp-obs-${i}" placeholder="¿Qué pasó? (ej: falta una llave de 17)"
+            value="${(r.observacion || "").replace(/"/g, "&quot;")}" onchange="onObsRespuestaChange(${i})">
+        </div>`}
+      </div>`;
+      }).join("");
+    }
+    function marcarRespuesta(i, conforme) {
+      leerRespuestasDesdeFormulario();
+      respuestasDraft[i].conforme = conforme;
+      renderItemsCompletar();
+    }
+    function onValorRespuestaChange(i) {
+      leerRespuestasDesdeFormulario();
+      // Si la pregunta tiene un valor esperado y lo anotado no calza, se marca
+      // sola como no conforme: así el técnico no tiene que acordarse de hacerlo.
+      const it = formularioAbierto.pauta.items[i];
+      if (it && it.tipo === "numero" && it.valorEsperado) {
+        const esperado = Number(it.valorEsperado);
+        const anotado = Number(respuestasDraft[i].valor);
+        if (Number.isFinite(esperado) && Number.isFinite(anotado)) {
+          respuestasDraft[i].conforme = anotado === esperado;
+          renderItemsCompletar();
+        }
+      }
+    }
+    function onObsRespuestaChange(i) { leerRespuestasDesdeFormulario(); }
+    function leerRespuestasDesdeFormulario() {
+      respuestasDraft = respuestasDraft.map((r, i) => {
+        const valor = document.getElementById("resp-valor-" + i);
+        const obs = document.getElementById("resp-obs-" + i);
+        return {
+          conforme: r.conforme,
+          valor: valor ? valor.value : r.valor,
+          observacion: obs ? obs.value : r.observacion,
+        };
+      });
+    }
+
+    async function enviarFormularioCompletado() {
+      if (!formularioAbierto) return;
+      document.getElementById("completar-form-error").style.display = "none";
+      leerRespuestasDesdeFormulario();
+      const p = formularioAbierto.pauta;
+      const items = p.items || [];
+
+      // Validaciones antes de mandar, para no hacer viajar el formulario en vano.
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        const r = respuestasDraft[i] || {};
+        if (it.tipo !== "marca" && !(r.valor || "").trim()) {
+          completarFormError(`Falta completar: "${it.texto}".`);
+          return;
+        }
+        if (!r.conforme && !(r.observacion || "").trim()) {
+          completarFormError(`Explica qué pasó en: "${it.texto}".`);
+          return;
+        }
+      }
+      const inputFoto = document.getElementById("completar-form-foto");
+      const archivo = inputFoto && inputFoto.files && inputFoto.files[0];
+      if (p.foto === "obligatoria" && !archivo) {
+        completarFormError("Este formulario exige adjuntar una foto.");
+        return;
+      }
+
+      const btn = document.getElementById("completar-form-btn");
+      btn.disabled = true; btn.textContent = "Enviando…";
+      try {
+        const fd = new FormData();
+        fd.append("pautaId", p.id);
+        fd.append("respuestas", JSON.stringify(respuestasDraft.map((r, i) => ({
+          indice: i, valor: r.valor || null, conforme: !!r.conforme, observacion: r.observacion || null,
+        }))));
+        const obs = document.getElementById("completar-form-obs").value.trim();
+        if (obs) fd.append("observacion", obs);
+        if (archivo) fd.append("foto", archivo);
+
+        const token = getAuthToken();
+        const res = await fetch(API_BASE + "/pautas/registros", {
+          method: "POST",
+          headers: token ? { "Authorization": "Bearer " + token } : {},
+          body: fd,
+        });
+        let data = null;
+        try { data = await res.json(); } catch (e) { /* sin cuerpo */ }
+        if (!res.ok) throw new Error((data && data.error) || ("Error " + res.status));
+
+        cerrarCompletarFormulario();
+        const noConformes = (data && data.noConformidades) || 0;
+        showSaveToast(noConformes > 0
+          ? `Formulario enviado con ${noConformes} no conformidad(es). Tu jefe de mantención ya fue avisado.`
+          : "Formulario enviado. Queda esperando la revisión de tu jefe de mantención.");
+        await cargarMisFormularios();
+      } catch (e) {
+        completarFormError("No se pudo enviar: " + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = "Enviar";
+      }
+    }
+
+    /* ---------------- FORMULARIOS DE INOCUIDAD (jefe de mantención) ---------------- */
+    let pautas = null;
+    let registrosPorRevisar = null;
+    let historialRegistros = null;
+    let pautaItemsDraft = [];
+    let pautaEditandoId = null;
+    let tabFormularios = "por-revisar";
+    let registroAbierto = null;
+
+    function formError(msg) {
+      const el = document.getElementById("form-error");
+      if (el) { el.textContent = msg; el.style.background = "#FDE8E4"; el.style.color = "#A32D2D"; el.style.display = "block"; }
+    }
+    function formSuccess(msg) {
+      const el = document.getElementById("form-error");
+      if (el) { el.textContent = msg; el.style.background = "#E7F4EE"; el.style.color = "#1F7A57"; el.style.display = "block"; }
+    }
+    function clearFormError() {
+      const el = document.getElementById("form-error");
+      if (el) { el.style.display = "none"; el.textContent = ""; }
+    }
+
+    /**
+     * Cuenta los formularios esperando revisión y lo muestra en el botón de la
+     * barra superior. Es la forma en que al jefe "le salta" que hay algo que
+     * atender, sin tener que abrir el panel a ver si pasó algo.
+     */
+    async function actualizarBadgeFormularios() {
+      const el = document.getElementById("formularios-badge");
+      if (!el || !hayPlantaActiva()) return;
+      try {
+        const pendientes = await apiFetch("/pautas/registros/planta/" + getPlantaId() + "?estado=completado");
+        el.textContent = pendientes.length;
+        el.style.display = pendientes.length > 0 ? "inline-flex" : "none";
+      } catch (e) { /* no crítico: el botón queda sin contador */ }
+    }
+
+    async function openFormularios() {
+      if (!hayPlantaActiva()) { showSaveToast("Primero crea una planta en Configuración; los formularios se definen dentro de una planta."); return; }
+      clearFormError();
+      cambiarTabFormularios("por-revisar");
+      document.getElementById("admin-formularios-overlay").classList.add("open");
+      await Promise.all([cargarPautas(), cargarPorRevisar()]);
+    }
+    function closeFormularios() {
+      document.getElementById("admin-formularios-overlay").classList.remove("open");
+    }
+    function cambiarTabFormularios(tab) {
+      tabFormularios = tab;
+      [["por-revisar", "tab-por-revisar", "seccion-por-revisar"],
+       ["pautas", "tab-pautas", "seccion-pautas"],
+       ["historial-reg", "tab-historial-reg", "seccion-historial-reg"]].forEach(([nombre, idTab, idSeccion]) => {
+        const elTab = document.getElementById(idTab);
+        const elSec = document.getElementById(idSeccion);
+        if (elTab) elTab.classList.toggle("active", nombre === tab);
+        if (elSec) elSec.style.display = nombre === tab ? "" : "none";
+      });
+    }
+
+    /* ----- Definición de pautas ----- */
+    const FRECUENCIA_LABEL = { mensual: "Mensual", semanal: "Semanal" };
+    const ALCANCE_LABEL = { individual: "Cada técnico", grupal: "Uno por planta" };
+    const TIPO_ITEM_LABEL = { marca: "Conforme / No conforme", numero: "Anotar número", texto: "Anotar texto" };
+
+    async function cargarPautas() {
+      try {
+        pautas = await apiFetch("/pautas/planta/" + getPlantaId());
+      } catch (e) {
+        pautas = [];
+        formError("No se pudieron cargar los formularios: " + e.message);
+      }
+      renderPautas();
+    }
+    function renderPautas() {
+      const cont = document.getElementById("pautas-list");
+      if (!cont) return;
+      if (!pautas || !pautas.length) {
+        cont.innerHTML = `<div class="empty-repuestos">Todavía no hay formularios. Crea el primero arriba — por ejemplo el control mensual de herramientas.</div>`;
+        return;
+      }
+      cont.innerHTML = pautas.map((p) => {
+        const datos = [p.norma, p.codigoProcedimiento, p.revision ? "Rev. " + p.revision : ""].filter(Boolean).map(x => x.replace(/</g, "&lt;")).join(" · ");
+        return `<div class="pauta-card">
+        <div class="pauta-card-head">
+          <strong>${(p.nombre || "").replace(/</g, "&lt;")}</strong>
+          <span class="chip">${FRECUENCIA_LABEL[p.frecuencia] || p.frecuencia}</span>
+          <span class="chip">${ALCANCE_LABEL[p.alcance] || p.alcance}</span>
+          ${p.activa ? "" : `<span class="chip ambar">De baja</span>`}
+        </div>
+        <div class="pauta-meta">
+          ${datos ? datos + "<br>" : ""}
+          ${(p.items || []).length} pregunta${(p.items || []).length === 1 ? "" : "s"} · Período vigente: ${p.periodoActualEtiqueta} · ${p._count && p._count.registros ? p._count.registros : 0} registro(s)
+        </div>
+        <div style="margin-top:9px;display:flex;gap:14px;flex-wrap:wrap;">
+          <a href="javascript:void(0)" onclick="editarPauta('${p.id}')">Editar</a>
+          <a href="javascript:void(0)" style="color:#A32D2D;" onclick="eliminarPauta('${p.id}')">${p.activa ? "Dar de baja" : "Eliminar"}</a>
+        </div>
+      </div>`;
+      }).join("");
+    }
+
+    function toggleNuevaPauta() {
+      const form = document.getElementById("nueva-pauta-form");
+      if (!form) return;
+      const abierto = form.style.display !== "none";
+      if (abierto) { form.style.display = "none"; return; }
+      cancelarEdicionPauta(true);
+      form.style.display = "block";
+    }
+    function cancelarEdicionPauta(mantenerAbierto) {
+      pautaEditandoId = null;
+      pautaItemsDraft = [{ texto: "", tipo: "marca", valorEsperado: "" }];
+      ["pauta-nombre", "pauta-norma", "pauta-codigo", "pauta-revision"].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = "";
+      });
+      const f = document.getElementById("pauta-frecuencia"); if (f) f.value = "mensual";
+      const a = document.getElementById("pauta-alcance"); if (a) a.value = "individual";
+      const fo = document.getElementById("pauta-foto"); if (fo) fo.value = "opcional";
+      document.getElementById("pauta-guardar-btn").textContent = "Guardar formulario";
+      renderPautaItems();
+      if (!mantenerAbierto) document.getElementById("nueva-pauta-form").style.display = "none";
+    }
+    function agregarItemPauta() {
+      leerItemsDesdeFormulario();
+      pautaItemsDraft.push({ texto: "", tipo: "marca", valorEsperado: "" });
+      renderPautaItems();
+      // El foco va a la pregunta recién agregada, para poder escribir de corrido.
+      const ultimo = document.getElementById("item-texto-" + (pautaItemsDraft.length - 1));
+      if (ultimo) ultimo.focus();
+    }
+    function quitarItemPauta(i) {
+      leerItemsDesdeFormulario();
+      pautaItemsDraft.splice(i, 1);
+      if (!pautaItemsDraft.length) pautaItemsDraft.push({ texto: "", tipo: "marca", valorEsperado: "" });
+      renderPautaItems();
+    }
+    /** Guarda lo escrito en los campos antes de volver a dibujar la lista, para
+     *  no perder el texto al agregar o quitar una pregunta. */
+    function leerItemsDesdeFormulario() {
+      pautaItemsDraft = pautaItemsDraft.map((it, i) => {
+        const texto = document.getElementById("item-texto-" + i);
+        const tipo = document.getElementById("item-tipo-" + i);
+        const esperado = document.getElementById("item-esperado-" + i);
+        return {
+          texto: texto ? texto.value : it.texto,
+          tipo: tipo ? tipo.value : it.tipo,
+          valorEsperado: esperado ? esperado.value : it.valorEsperado,
+        };
+      });
+    }
+    function onTipoItemChange(i) {
+      leerItemsDesdeFormulario();
+      renderPautaItems();
+    }
+    function renderPautaItems() {
+      const cont = document.getElementById("pauta-items-list");
+      if (!cont) return;
+      cont.innerHTML = pautaItemsDraft.map((it, i) => `
+      <div class="item-editor">
+        <div class="fila">
+          <span style="color:var(--ink-60);font-size:12px;font-weight:700;min-width:18px;">${i + 1}.</span>
+          <input type="text" id="item-texto-${i}" placeholder="Ej: Las llaves fijas están completas" value="${(it.texto || "").replace(/"/g, "&quot;")}">
+          <select id="item-tipo-${i}" onchange="onTipoItemChange(${i})">
+            <option value="marca" ${it.tipo === "marca" ? "selected" : ""}>Conforme / No conforme</option>
+            <option value="numero" ${it.tipo === "numero" ? "selected" : ""}>Anotar número</option>
+            <option value="texto" ${it.tipo === "texto" ? "selected" : ""}>Anotar texto</option>
+          </select>
+          <button class="icon-btn danger" onclick="quitarItemPauta(${i})" aria-label="Quitar pregunta">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        ${it.tipo === "numero" ? `<div class="fila" style="margin-top:7px;">
+          <span style="font-size:12px;color:var(--ink-60);">Deberían ser</span>
+          <input type="text" id="item-esperado-${i}" style="max-width:90px;min-width:70px;flex:0;" placeholder="Ej: 12" value="${(it.valorEsperado || "").replace(/"/g, "&quot;")}">
+          <span style="font-size:12px;color:var(--ink-60);">— si el técnico anota otra cantidad, se marca como no conforme automáticamente.</span>
+        </div>` : ""}
+      </div>`).join("");
+    }
+
+    function editarPauta(pautaId) {
+      clearFormError();
+      const p = (pautas || []).find(x => x.id === pautaId);
+      if (!p) return;
+      pautaEditandoId = pautaId;
+      document.getElementById("pauta-nombre").value = p.nombre || "";
+      document.getElementById("pauta-norma").value = p.norma || "";
+      document.getElementById("pauta-codigo").value = p.codigoProcedimiento || "";
+      document.getElementById("pauta-revision").value = p.revision || "";
+      document.getElementById("pauta-frecuencia").value = p.frecuencia || "mensual";
+      document.getElementById("pauta-alcance").value = p.alcance || "individual";
+      document.getElementById("pauta-foto").value = p.foto || "opcional";
+      pautaItemsDraft = (p.items || []).map(it => ({ texto: it.texto, tipo: it.tipo, valorEsperado: it.valorEsperado || "" }));
+      if (!pautaItemsDraft.length) pautaItemsDraft = [{ texto: "", tipo: "marca", valorEsperado: "" }];
+      renderPautaItems();
+      document.getElementById("pauta-guardar-btn").textContent = "Guardar cambios";
+      document.getElementById("nueva-pauta-form").style.display = "block";
+      cambiarTabFormularios("pautas");
+    }
+
+    async function guardarPauta() {
+      clearFormError();
+      leerItemsDesdeFormulario();
+      const nombre = document.getElementById("pauta-nombre").value.trim();
+      if (!nombre) { formError("Escribe el nombre del formulario."); return; }
+      const items = pautaItemsDraft.filter(it => (it.texto || "").trim()).map(it => ({
+        texto: it.texto.trim(),
+        tipo: it.tipo,
+        valorEsperado: it.tipo === "numero" ? (it.valorEsperado || "").trim() : null,
+      }));
+      if (!items.length) { formError("Agrega al menos una pregunta."); return; }
+
+      const cuerpo = {
+        nombre,
+        norma: document.getElementById("pauta-norma").value.trim() || null,
+        codigoProcedimiento: document.getElementById("pauta-codigo").value.trim() || null,
+        revision: document.getElementById("pauta-revision").value.trim() || null,
+        frecuencia: document.getElementById("pauta-frecuencia").value,
+        alcance: document.getElementById("pauta-alcance").value,
+        foto: document.getElementById("pauta-foto").value,
+        items,
+      };
+      const btn = document.getElementById("pauta-guardar-btn");
+      const textoOriginal = btn.textContent;
+      btn.disabled = true; btn.textContent = "Guardando…";
+      try {
+        if (pautaEditandoId) {
+          await apiFetch("/pautas/" + pautaEditandoId, { method: "PATCH", body: cuerpo });
+          formSuccess(`Formulario "${nombre}" actualizado. Los registros ya completados conservan las preguntas con las que se respondieron.`);
+        } else {
+          await apiFetch("/pautas", { method: "POST", body: { ...cuerpo, plantaId: getPlantaId() } });
+          formSuccess(`Formulario "${nombre}" creado. Ya les aparece a los técnicos.`);
+        }
+        cancelarEdicionPauta();
+        await cargarPautas();
+      } catch (e) {
+        formError("No se pudo guardar el formulario: " + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = textoOriginal;
+      }
+    }
+
+    let pautaPendienteEliminar = null;
+    async function eliminarPauta(pautaId) {
+      clearFormError();
+      if (pautaPendienteEliminar !== pautaId) {
+        pautaPendienteEliminar = pautaId;
+        formError("¿Seguro? Vuelve a hacer clic para confirmar. Si el formulario ya tiene registros, no se elimina: queda de baja y su historial se conserva.");
+        return;
+      }
+      pautaPendienteEliminar = null;
+      try {
+        const r = await apiFetch("/pautas/" + pautaId, { method: "DELETE" });
+        if (r && r.desactivada) formSuccess("El formulario quedó de baja. " + r.motivo);
+        else formSuccess("Formulario eliminado.");
+        await cargarPautas();
+      } catch (e) {
+        formError("No se pudo eliminar: " + e.message);
+      }
+    }
+
+    /* ----- Revisión y cierre ----- */
+    function badgeRegistro(r) {
+      if (r.estado === "cerrado") return `<span class="chip verde">Cerrado</span>`;
+      if (r.noConformidadesAbiertas > 0) return `<span class="chip rojo">${r.noConformidadesAbiertas} no conformidad(es)</span>`;
+      return `<span class="chip ambar">Por cerrar</span>`;
+    }
+    function filaRegistro(r) {
+      const quien = r.completadoPor ? `${r.completadoPor.nombre || ""} ${r.completadoPor.apellido || ""}`.trim() : "—";
+      const fecha = new Date(r.completadoAt).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" });
+      return `<div class="pauta-card">
+      <div class="pauta-card-head">
+        <strong>${((r.pauta && r.pauta.nombre) || "Formulario").replace(/</g, "&lt;")}</strong>
+        ${badgeRegistro(r)}
+      </div>
+      <div class="pauta-meta">
+        ${r.periodoEtiqueta} · ${quien.replace(/</g, "&lt;")} · ${fecha}
+        ${r.pauta && r.pauta.codigoProcedimiento ? " · " + r.pauta.codigoProcedimiento.replace(/</g, "&lt;") : ""}
+      </div>
+      <div style="margin-top:9px;">
+        <a href="javascript:void(0)" onclick="abrirRegistro('${r.id}')">Ver y gestionar →</a>
+      </div>
+    </div>`;
+    }
+
+    async function cargarPorRevisar() {
+      const cont = document.getElementById("por-revisar-list");
+      if (cont) cont.innerHTML = `<div class="empty-repuestos">Cargando…</div>`;
+      try {
+        registrosPorRevisar = await apiFetch("/pautas/registros/planta/" + getPlantaId() + "?estado=completado");
+      } catch (e) {
+        registrosPorRevisar = [];
+        if (cont) cont.innerHTML = `<div class="empty-repuestos">No se pudieron cargar: ${e.message}</div>`;
+        return;
+      }
+      renderPorRevisar();
+    }
+    function renderPorRevisar() {
+      const cont = document.getElementById("por-revisar-list");
+      if (!cont) return;
+      const n = (registrosPorRevisar || []).length;
+      [["tab-revisar-badge", n], ["formularios-badge", n]].forEach(([id, valor]) => {
+        const el = document.getElementById(id);
+        if (el) { el.textContent = valor; el.style.display = valor > 0 ? "inline-flex" : "none"; }
+      });
+      if (!n) {
+        cont.innerHTML = `<div class="empty-repuestos">No hay formularios esperando revisión. Cuando un técnico complete uno, aparece acá para que lo revises y cierres.</div>`;
+        return;
+      }
+      cont.innerHTML = registrosPorRevisar.map(filaRegistro).join("");
+    }
+
+    async function cargarHistorialRegistros() {
+      const cont = document.getElementById("historial-reg-list");
+      if (cont) cont.innerHTML = `<div class="empty-repuestos">Cargando…</div>`;
+      const desde = document.getElementById("reg-desde").value;
+      const hasta = document.getElementById("reg-hasta").value;
+      const params = [];
+      if (desde) params.push("desde=" + desde);
+      if (hasta) params.push("hasta=" + hasta);
+      try {
+        historialRegistros = await apiFetch("/pautas/registros/planta/" + getPlantaId() + (params.length ? "?" + params.join("&") : ""));
+      } catch (e) {
+        historialRegistros = [];
+        if (cont) cont.innerHTML = `<div class="empty-repuestos">No se pudo cargar: ${e.message}</div>`;
+        return;
+      }
+      cont.innerHTML = historialRegistros.length
+        ? historialRegistros.map(filaRegistro).join("")
+        : `<div class="empty-repuestos">No hay registros en ese rango de fechas.</div>`;
+    }
+
+    function registroError(msg) {
+      const el = document.getElementById("registro-error");
+      if (el) { el.textContent = msg; el.style.background = "#FDE8E4"; el.style.color = "#A32D2D"; el.style.display = "block"; }
+    }
+    function registroSuccess(msg) {
+      const el = document.getElementById("registro-error");
+      if (el) { el.textContent = msg; el.style.background = "#E7F4EE"; el.style.color = "#1F7A57"; el.style.display = "block"; }
+    }
+    function clearRegistroError() {
+      const el = document.getElementById("registro-error");
+      if (el) { el.style.display = "none"; el.textContent = ""; }
+    }
+    function closeRegistro() {
+      document.getElementById("registro-overlay").classList.remove("open");
+      registroAbierto = null;
+    }
+
+    async function abrirRegistro(registroId) {
+      clearRegistroError();
+      document.getElementById("registro-contenido").innerHTML = `<div class="empty-repuestos">Cargando…</div>`;
+      document.getElementById("registro-overlay").classList.add("open");
+      try {
+        registroAbierto = await apiFetch("/pautas/registros/" + registroId);
+      } catch (e) {
+        document.getElementById("registro-contenido").innerHTML = `<div class="empty-repuestos">No se pudo cargar: ${e.message}</div>`;
+        return;
+      }
+      renderRegistro();
+    }
+    function renderRegistro() {
+      const r = registroAbierto;
+      if (!r) return;
+      const s = r.snapshot || {};
+      document.getElementById("registro-titulo").textContent = s.nombre || "Registro";
+      const quien = r.completadoPor ? `${r.completadoPor.nombre || ""} ${r.completadoPor.apellido || ""}`.trim() : "—";
+      const cerradoPor = r.cerradoPor ? `${r.cerradoPor.nombre || ""} ${r.cerradoPor.apellido || ""}`.trim() : null;
+
+      // Ficha de identificación: es lo que el auditor mira primero.
+      const ficha = [
+        ["Procedimiento", s.codigoProcedimiento],
+        ["Norma", s.norma],
+        ["Revisión", s.revision],
+        ["Período", r.periodoEtiqueta],
+        ["Planta", s.plantaNombre],
+        ["Completado por", quien],
+        ["Fecha", new Date(r.completadoAt).toLocaleString("es-CL", { dateStyle: "long", timeStyle: "short" })],
+        ["Cerrado por", cerradoPor ? `${cerradoPor} · ${new Date(r.cerradoAt).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}` : null],
+      ].filter(([, v]) => v).map(([k, v]) => `<div><span style="color:var(--ink-60);">${k}:</span> <strong>${String(v).replace(/</g, "&lt;")}</strong></div>`).join("");
+
+      const respuestas = (r.respuestas || []).map((x) => {
+        const esperado = x.valorEsperado ? ` <span style="color:var(--ink-60);">(deberían ser ${x.valorEsperado})</span>` : "";
+        const valor = x.tipo === "marca" ? "" : `<div style="font-size:12.5px;margin-top:4px;">Anotado: <strong>${(x.valor || "—").replace(/</g, "&lt;")}</strong>${esperado}</div>`;
+        const obs = x.observacion ? `<div style="font-size:12.5px;color:var(--ink-60);margin-top:4px;">${x.observacion.replace(/</g, "&lt;")}</div>` : "";
+        let gestion = "";
+        if (!x.conforme) {
+          if (x.cerradaAt) {
+            const porQuien = x.cerradaPor ? `${x.cerradaPor.nombre || ""} ${x.cerradaPor.apellido || ""}`.trim() : "—";
+            gestion = `<div style="margin-top:8px;font-size:12.5px;background:#E7F4EE;color:#1F7A57;padding:8px 10px;border-radius:9px;">
+            <strong>Resuelta:</strong> ${(x.accion || "").replace(/</g, "&lt;")}<br>
+            <span style="opacity:.8;">${porQuien.replace(/</g, "&lt;")} · ${new Date(x.cerradaAt).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}</span>
+          </div>`;
+          } else if (r.estado !== "cerrado") {
+            gestion = `<div style="margin-top:8px;">
+            <input type="text" id="accion-${x.id}" placeholder="¿Qué se hizo para resolverla?">
+            <div class="row" style="margin-top:6px;">
+              <button class="add-btn" onclick="cerrarNoConformidad('${x.id}')">Cerrar no conformidad</button>
+            </div>
+          </div>`;
+          }
+        }
+        return `<div class="respuesta-row ${x.conforme ? "" : "no-conforme"}">
+        <div class="cabecera">
+          <span class="texto">${(x.texto || "").replace(/</g, "&lt;")}</span>
+          ${x.conforme ? `<span class="chip verde">Conforme</span>` : `<span class="chip rojo">No conforme</span>`}
+        </div>
+        ${valor}${obs}${gestion}
+      </div>`;
+      }).join("");
+
+      const abiertas = (r.respuestas || []).filter(x => !x.conforme && !x.cerradaAt).length;
+      const acciones = r.estado === "cerrado"
+        ? `<div class="chip verde" style="font-size:12px;padding:8px 14px;">Ciclo cerrado</div>`
+        : `<button class="add-btn" onclick="cerrarRegistro()" ${abiertas > 0 ? "disabled" : ""}>Revisar y cerrar el ciclo</button>
+           ${abiertas > 0 ? `<div style="font-size:12px;color:#A32D2D;margin-top:6px;">Quedan ${abiertas} no conformidad(es) por resolver. Un registro no se puede cerrar con anomalías abiertas.</div>` : ""}`;
+
+      document.getElementById("registro-contenido").innerHTML = `
+      <div class="panel" style="margin-bottom:14px;">
+        <div style="font-size:12.5px;line-height:1.7;">${ficha}</div>
+      </div>
+      ${r.observacion ? `<div style="font-size:12.5px;background:#F6F6F4;padding:10px 12px;border-radius:10px;margin-bottom:12px;"><strong>Observación del técnico:</strong> ${r.observacion.replace(/</g, "&lt;")}</div>` : ""}
+      ${r.fotoUrl ? `<div style="margin-bottom:12px;"><a href="${urlArchivo(r.fotoUrl)}" target="_blank" rel="noopener">Ver foto adjunta</a></div>` : ""}
+      ${respuestas}
+      <div style="margin-top:16px;">${acciones}</div>`;
+    }
+
+    async function cerrarNoConformidad(respuestaId) {
+      clearRegistroError();
+      const input = document.getElementById("accion-" + respuestaId);
+      const accion = input ? input.value.trim() : "";
+      if (!accion) { registroError("Escribe qué se hizo para resolverla antes de cerrarla."); return; }
+      try {
+        await apiFetch("/pautas/registros/respuestas/" + respuestaId + "/cerrar", { method: "POST", body: { accion } });
+        registroAbierto = await apiFetch("/pautas/registros/" + registroAbierto.id);
+        renderRegistro();
+        registroSuccess("No conformidad cerrada, con su fecha y responsable.");
+      } catch (e) {
+        registroError("No se pudo cerrar: " + e.message);
+      }
+    }
+    async function cerrarRegistro() {
+      clearRegistroError();
+      try {
+        registroAbierto = await apiFetch("/pautas/registros/" + registroAbierto.id + "/cerrar", { method: "POST" });
+        renderRegistro();
+        registroSuccess("Ciclo cerrado. El registro queda como evidencia de auditoría.");
+        await cargarPorRevisar();
+      } catch (e) {
+        registroError("No se pudo cerrar el registro: " + e.message);
       }
     }
 
@@ -8168,6 +9023,142 @@
       <div id="admin-lineas-list"></div>
     </div>
   </div>
+
+  <!-- Formularios de inocuidad y gestión: el jefe arma las pautas (control de
+       herramientas y cualquier otro control periódico que pida la norma),
+       revisa lo que responden los técnicos, resuelve las no conformidades y
+       cierra el ciclo. -->
+  <div class="admin-overlay" id="admin-formularios-overlay" onclick="if(event.target===this) closeFormularios()">
+    <div class="admin-sheet" style="max-width:760px;">
+      <div class="admin-head">
+        <h3>Formularios de inocuidad y gestión</h3>
+        <button class="sheet-close" onclick="closeFormularios()">✕</button>
+      </div>
+
+      <div class="form-tabs">
+        <button class="form-tab active" id="tab-por-revisar" onclick="cambiarTabFormularios('por-revisar')">
+          Por revisar
+          <span class="admin-btn-badge" id="tab-revisar-badge" style="display:none;">0</span>
+        </button>
+        <button class="form-tab" id="tab-pautas" onclick="cambiarTabFormularios('pautas')">Formularios</button>
+        <button class="form-tab" id="tab-historial-reg" onclick="cambiarTabFormularios('historial-reg')">Historial</button>
+      </div>
+
+      <div id="form-error" style="display:none; font-size:12.5px; padding:10px 14px; border-radius:10px; margin-bottom:14px;"></div>
+
+      <!-- Pendientes de cierre -->
+      <div id="seccion-por-revisar">
+        <div id="por-revisar-list"></div>
+      </div>
+
+      <!-- Definición de pautas -->
+      <div id="seccion-pautas" style="display:none;">
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-title" style="cursor:pointer;" onclick="toggleNuevaPauta()">
+            <h3>+ Nuevo formulario</h3>
+            <div class="panel-sub">Define el control, su frecuencia y sus preguntas. Los técnicos lo verán en su pantalla.</div>
+          </div>
+          <div id="nueva-pauta-form" style="display:none; margin-top:14px;">
+            <div class="config-form">
+              <label>Nombre del formulario</label>
+              <input type="text" id="pauta-nombre" placeholder="Ej: Control mensual de herramientas">
+
+              <div class="row" style="margin-top:12px;">
+                <div style="flex:1;min-width:130px;">
+                  <label>Norma</label>
+                  <input type="text" id="pauta-norma" placeholder="Ej: BRCGS" list="normas-list">
+                </div>
+                <div style="flex:1;min-width:130px;">
+                  <label>N° de procedimiento</label>
+                  <input type="text" id="pauta-codigo" placeholder="Ej: PR-MAN-014">
+                </div>
+                <div style="flex:1;min-width:90px;">
+                  <label>Revisión</label>
+                  <input type="text" id="pauta-revision" placeholder="Ej: 2">
+                </div>
+              </div>
+
+              <div class="row" style="margin-top:12px;">
+                <div style="flex:1;min-width:130px;">
+                  <label>Frecuencia</label>
+                  <select id="pauta-frecuencia">
+                    <option value="mensual">Mensual</option>
+                    <option value="semanal">Semanal</option>
+                  </select>
+                </div>
+                <div style="flex:1;min-width:130px;">
+                  <label>Quién lo responde</label>
+                  <select id="pauta-alcance">
+                    <option value="individual">Cada técnico el suyo</option>
+                    <option value="grupal">Uno solo para la planta</option>
+                  </select>
+                </div>
+                <div style="flex:1;min-width:130px;">
+                  <label>Foto del registro</label>
+                  <select id="pauta-foto">
+                    <option value="opcional">Opcional</option>
+                    <option value="obligatoria">Obligatoria</option>
+                    <option value="no">No pedir</option>
+                  </select>
+                </div>
+              </div>
+
+              <label style="margin-top:14px;">Preguntas</label>
+              <div id="pauta-items-list"></div>
+              <div class="row" style="margin-top:8px;">
+                <button class="add-btn" onclick="agregarItemPauta()">+ Agregar pregunta</button>
+              </div>
+
+              <div class="row" style="margin-top:14px;">
+                <button class="add-btn" id="pauta-guardar-btn" onclick="guardarPauta()">Guardar formulario</button>
+                <button class="add-btn" style="background:#8A8A87;" onclick="cancelarEdicionPauta()">Cancelar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="pautas-list"></div>
+      </div>
+
+      <!-- Historial para auditoría -->
+      <div id="seccion-historial-reg" style="display:none;">
+        <div class="config-form" style="margin-bottom:14px;">
+          <div class="row">
+            <div style="flex:1;min-width:130px;">
+              <label>Desde</label>
+              <input type="date" id="reg-desde">
+            </div>
+            <div style="flex:1;min-width:130px;">
+              <label>Hasta</label>
+              <input type="date" id="reg-hasta">
+            </div>
+            <button class="add-btn" style="align-self:flex-end;" onclick="cargarHistorialRegistros()">Buscar</button>
+          </div>
+          <div style="font-size:12px;color:var(--ink-60);margin-top:6px;">El auditor pide un día puntual: filtra por fecha y descarga el registro en PDF.</div>
+        </div>
+        <div id="historial-reg-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detalle de un registro: respuestas, no conformidades y cierre del ciclo. -->
+  <div class="admin-overlay" id="registro-overlay" onclick="if(event.target===this) closeRegistro()">
+    <div class="admin-sheet" style="max-width:720px;">
+      <div class="admin-head">
+        <h3 id="registro-titulo">Registro</h3>
+        <button class="sheet-close" onclick="closeRegistro()">✕</button>
+      </div>
+      <div id="registro-error" style="display:none; font-size:12.5px; padding:10px 14px; border-radius:10px; margin-bottom:14px;"></div>
+      <div id="registro-contenido"></div>
+    </div>
+  </div>
+
+  <datalist id="normas-list">
+    <option value="GlobalGAP">
+    <option value="BRCGS">
+    <option value="HACCP">
+    <option value="IFS">
+    <option value="Interno">
+  </datalist>
 
   <div class="admin-overlay" id="admin-tec-overlay" onclick="if(event.target===this) closeAdminTec()">
     <div class="admin-sheet">
