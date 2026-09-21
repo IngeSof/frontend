@@ -4575,7 +4575,6 @@
       document.getElementById("boot-loading").style.display = "none";
       document.getElementById("screen-login").classList.add("active");
     }
-    boot();
 
     function goTo(screen) {
       document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
@@ -7716,6 +7715,14 @@
 
       renderCartaGantt("gerencia");
     }
+
+    // El arranque va al FINAL del script, a propósito. Antes se llamaba a la
+    // mitad, y en el camino del link de activación (?activar=...) se usaba una
+    // variable declarada más abajo con "let": JavaScript no permite tocarla
+    // antes de su declaración, así que reventaba con un error y la página
+    // quedaba en blanco. Dejándolo acá, todo el archivo ya está inicializado
+    // cuando arranca la app y ese tipo de problema no puede repetirse.
+    boot();
   </script>
 
   <div class="admin-overlay" id="metricas-overlay" onclick="if(event.target===this) closeMetricas()">
