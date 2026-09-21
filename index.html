@@ -5598,6 +5598,7 @@
       renderAdminSwatches();
       renderAdmin();
       document.getElementById("admin-overlay").classList.add("open");
+      cargarSugerenciasRepuestos();
       if (plantillasCache === null) cargarPlantillas();
       else renderPlantillasSelect();
     }
@@ -5747,8 +5748,8 @@
                     return `<div class="repuesto-row repuesto-editing">
                     <div class="rep-edit-form">
                       <input type="text" id="edit-rep-clase-${r.id}" placeholder="Clase" list="clases-list" value="${(cl ? cl.nombre : "").replace(/"/g, '&quot;')}">
-                      <input type="text" id="edit-rep-marca-${r.id}" placeholder="Marca" value="${(r.marca || "").replace(/"/g, '&quot;')}">
-                      <input type="text" id="edit-rep-modelo-${r.id}" placeholder="Modelo" value="${(r.modelo || "").replace(/"/g, '&quot;')}">
+                      <input type="text" id="edit-rep-marca-${r.id}" placeholder="Marca" list="marcas-list" value="${(r.marca || "").replace(/"/g, '&quot;')}">
+                      <input type="text" id="edit-rep-modelo-${r.id}" placeholder="Modelo" list="modelos-list" value="${(r.modelo || "").replace(/"/g, '&quot;')}">
                       <input type="text" id="edit-rep-cant-${r.id}" placeholder="Cant." value="${r.cantidad}">
                       <div class="row">
                         <input type="text" id="edit-rep-codint-${r.id}" placeholder="C\u00f3digo interno" value="${(r.codigoInterno || "").replace(/"/g, '&quot;')}">
@@ -5786,8 +5787,8 @@
                 }).join("")}
               <div class="add-repuesto-form">
                 <input type="text" id="rep-clase-${u.id}" placeholder="Clase (ej: Rodamiento)" list="clases-list">
-                <input type="text" id="rep-marca-${u.id}" placeholder="Marca">
-                <input type="text" id="rep-modelo-${u.id}" placeholder="Modelo">
+                <input type="text" id="rep-marca-${u.id}" placeholder="Marca" list="marcas-list">
+                <input type="text" id="rep-modelo-${u.id}" placeholder="Modelo" list="modelos-list">
                 <input type="text" id="rep-cant-${u.id}" placeholder="Cant." value="1">
                 <div class="row">
                   <input type="text" id="rep-codint-${u.id}" placeholder="C\u00f3digo interno">
@@ -5842,6 +5843,25 @@
       }).join("");
       const dl = document.getElementById("clases-list");
       if (dl) dl.innerHTML = db.clasesRepuesto.map(c => `<option value="${c.nombre.replace(/"/g, '&quot;')}">`).join("");
+    }
+    /**
+     * Carga las marcas y modelos ya usados en la planta para sugerirlos al
+     * escribir. Que la gente reutilice la misma escritura es lo que hace que
+     * el consolidado de repuestos sume bien: si uno anota "SKF 6624" y otro
+     * "skf-6624", el total se parte en dos y la compra sale corta.
+     */
+    async function cargarSugerenciasRepuestos() {
+      const plantaId = getPlantaId();
+      if (!plantaId) return;
+      try {
+        const s = await apiFetch("/repuestos/planta/" + plantaId + "/sugerencias");
+        const pintar = (id, valores) => {
+          const el = document.getElementById(id);
+          if (el) el.innerHTML = (valores || []).map(v => `<option value="${v.replace(/"/g, '&quot;')}">`).join("");
+        };
+        pintar("marcas-list", s.marcas);
+        pintar("modelos-list", s.modelos);
+      } catch (e) { /* no crítico: solo se pierden las sugerencias */ }
     }
     function cancelPendingDelete() {
       pendingDelete = null;
@@ -6683,6 +6703,45 @@
       doc.setFontSize(10);
       doc.text(`${data.clienteNombre || ""} · Generado ${new Date(data.generadoAt).toLocaleDateString("es-CL")}`, margenX, y);
       y += 10;
+      /**
+       * Bloque consolidado: cada repuesto una sola vez, con su total y el
+       * detalle de en qué unidades se usa. Es lo que sirve para cotizar y
+       * comprar; el desglose por unidad de más arriba sirve para saber qué
+       * lleva cada máquina.
+       */
+      function escribirConsolidado(titulo, lista, sangria) {
+        if (!lista || !lista.length) return;
+        if (y > 260) { doc.addPage(); y = 18; }
+        if (titulo) {
+          doc.setFontSize(11);
+          doc.setFont(undefined, "bold");
+          doc.text(titulo, margenX + sangria, y);
+          doc.setFont(undefined, "normal");
+          y += 6;
+        }
+        doc.setFontSize(9);
+        lista.forEach((r) => {
+          if (y > 275) { doc.addPage(); y = 18; }
+          const nombrePieza = [r.clase, r.marca, r.modelo, r.descripcion].filter(Boolean).join(" · ") || "(sin datos)";
+          const codigos = [r.codigoInterno ? "Cód. interno: " + r.codigoInterno : "", r.codigoProveedor ? "Cód. proveedor: " + r.codigoProveedor : ""].filter(Boolean).join(" · ");
+          doc.setFont(undefined, "bold");
+          doc.text(`TOTAL ${r.total}`, margenX + sangria + 4, y);
+          doc.setFont(undefined, "normal");
+          doc.text(`${nombrePieza}${codigos ? " — " + codigos : ""}`, margenX + sangria + 24, y);
+          y += 4.5;
+          const detalle = (r.unidades || []).map((u) => `${u.nombre}: ${u.cantidad}`).join("   ");
+          doc.splitTextToSize(detalle, 165 - sangria).forEach((linea) => {
+            if (y > 282) { doc.addPage(); y = 18; }
+            doc.setTextColor(110);
+            doc.text(linea, margenX + sangria + 24, y);
+            doc.setTextColor(0);
+            y += 4.5;
+          });
+          y += 1.5;
+        });
+        y += 4;
+      }
+
       const lineas = data.lineas || [];
       if (!lineas.length) {
         doc.text("No hay líneas registradas en esta planta.", margenX, y);
@@ -6712,8 +6771,22 @@
             });
           }
         });
-        y += 4;
+        y += 2;
+        escribirConsolidado(`Consolidado · ${linea.nombre || "línea"}`, linea.consolidado, 4);
       });
+
+      if ((data.consolidadoPlanta || []).length) {
+        doc.addPage();
+        y = 18;
+        doc.setFontSize(14);
+        doc.text(`Consolidado de toda la planta · ${data.plantaNombre || ""}`, margenX, y);
+        y += 6;
+        doc.setFontSize(10);
+        doc.text("Totales para cotizar y generar la orden de compra.", margenX, y);
+        y += 10;
+        escribirConsolidado("", data.consolidadoPlanta, 0);
+      }
+
       const nombreArchivo = `repuestos-${(data.plantaNombre || "planta").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.pdf`;
       doc.save(nombreArchivo);
     }
@@ -8000,6 +8073,8 @@
         style="display:none; background:#FDE8E4; color:#A32D2D; font-size:12.5px; padding:10px 14px; border-radius:10px; margin-bottom:14px;">
       </div>
       <datalist id="clases-list"></datalist>
+      <datalist id="marcas-list"></datalist>
+      <datalist id="modelos-list"></datalist>
       <div id="admin-lineas-list"></div>
     </div>
   </div>
