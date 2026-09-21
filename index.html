@@ -80,7 +80,13 @@
       object-fit: cover;
     }
 
-    #screen-login.active {
+    /* Las tres pantallas con tarjeta (elegir perfil, ingresar con correo y
+       activar cuenta) comparten el mismo centrado y fondo. Antes solo la
+       primera lo tenía, así que el formulario de ingreso y el de activación
+       quedaban pegados arriba a la izquierda. */
+    #screen-login.active,
+    #screen-login-form.active,
+    #screen-activar-cuenta.active {
       display: flex;
       align-items: center;
       justify-content: center;
@@ -3560,6 +3566,18 @@
         </div>
         <div id="activar-cuenta-intro" style="font-size:13.5px; color:var(--ink-70); margin-bottom:14px;">Cargando…</div>
         <div class="login-form-field">
+          <label for="activar-cuenta-nombre">Nombre</label>
+          <input type="text" id="activar-cuenta-nombre" placeholder="Tu nombre" autocomplete="given-name">
+        </div>
+        <div class="login-form-field">
+          <label for="activar-cuenta-apellido">Apellidos</label>
+          <input type="text" id="activar-cuenta-apellido" placeholder="Tus apellidos" autocomplete="family-name">
+        </div>
+        <div class="login-form-field">
+          <label for="activar-cuenta-email">Correo</label>
+          <input type="email" id="activar-cuenta-email" placeholder="tucorreo@empresa.cl" autocomplete="email">
+        </div>
+        <div class="login-form-field">
           <label for="activar-cuenta-password">Elige tu clave</label>
           <input type="password" id="activar-cuenta-password" placeholder="Mínimo 8 caracteres" autocomplete="new-password">
         </div>
@@ -4620,7 +4638,7 @@
      *  la cuenta ya fue activada no basta con deshabilitarlos: quedaban en
      *  pantalla en gris y parecía que igual se podía cambiar la clave. */
     function mostrarCamposActivacion(visible) {
-      ["activar-cuenta-password", "activar-cuenta-password2"].forEach((id) => {
+      ["activar-cuenta-nombre", "activar-cuenta-apellido", "activar-cuenta-email", "activar-cuenta-password", "activar-cuenta-password2"].forEach((id) => {
         const el = document.getElementById(id);
         const contenedor = el && el.closest(".login-form-field");
         if (contenedor) contenedor.style.display = visible ? "" : "none";
@@ -4656,7 +4674,12 @@
         const nombreSeguro = (info.nombre || "").replace(/</g, "&lt;");
         const clienteSeguro = info.clienteNombre ? info.clienteNombre.replace(/</g, "&lt;") : "";
         document.getElementById("activar-cuenta-intro").innerHTML =
-          `Hola <strong>${nombreSeguro}</strong>, vas a activar tu cuenta de ${rolLabel}${clienteSeguro ? " en <strong>" + clienteSeguro + "</strong>" : ""}. Elige tu clave para continuar.`;
+          `Hola <strong>${nombreSeguro}</strong>, vas a activar tu cuenta de ${rolLabel}${clienteSeguro ? " en <strong>" + clienteSeguro + "</strong>" : ""}. Revisa que tus datos estén correctos y elige tu clave.`;
+        // Se precargan los datos con los que se dio de alta la cuenta, para
+        // que la persona solo confirme o corrija lo que esté mal.
+        document.getElementById("activar-cuenta-nombre").value = info.nombre || "";
+        document.getElementById("activar-cuenta-apellido").value = info.apellido || "";
+        document.getElementById("activar-cuenta-email").value = info.email || "";
       } catch (e) {
         document.getElementById("activar-cuenta-intro").textContent = "No se pudo cargar la invitación: " + e.message;
         document.getElementById("activar-cuenta-submit").disabled = true;
@@ -4665,14 +4688,22 @@
     async function submitActivarCuenta() {
       const errEl = document.getElementById("activar-cuenta-error");
       errEl.textContent = "";
+      const nombre = document.getElementById("activar-cuenta-nombre").value.trim();
+      const apellido = document.getElementById("activar-cuenta-apellido").value.trim();
+      const email = document.getElementById("activar-cuenta-email").value.trim();
       const p1 = document.getElementById("activar-cuenta-password").value;
       const p2 = document.getElementById("activar-cuenta-password2").value;
+      if (!nombre) { errEl.textContent = "Escribe tu nombre."; return; }
+      if (!email) { errEl.textContent = "Escribe tu correo: con él vas a iniciar sesión."; return; }
       if (!p1 || p1.length < 8) { errEl.textContent = "La clave debe tener al menos 8 caracteres."; return; }
       if (p1 !== p2) { errEl.textContent = "Las claves no coinciden."; return; }
       const btn = document.getElementById("activar-cuenta-submit");
       btn.disabled = true; btn.textContent = "Activando…";
       try {
-        const data = await apiFetch("/auth/activar-password", { method: "POST", body: { usuarioId: activarCuentaUsuarioId, password: p1 } });
+        const data = await apiFetch("/auth/activar-password", {
+          method: "POST",
+          body: { usuarioId: activarCuentaUsuarioId, password: p1, nombre, apellido, email },
+        });
         limpiarModoSoporte(); // activar una cuenta cierra cualquier sesión de soporte anterior
         await completarIngresoConToken(data);
       } catch (e) {
@@ -4739,6 +4770,7 @@
           ${jefe && jefe.estado === "invitado" ? ` · <a href="javascript:void(0)" onclick="reenviarInvitacionJefe('${jefe.id}')">Reenviar invitación</a>` : ""}
           ${jefe ? `<div style="margin-top:6px;"><a href="javascript:void(0)" onclick="entrarComoJefe('${c.id}', '${(c.nombre || "").replace(/'/g, "\\'").replace(/</g, "&lt;")}')">Entrar como Jefe de mantención (modo soporte) →</a></div>` : ""}
           <div style="margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;">
+            ${jefe && jefe.estado === "invitado" ? `<a href="javascript:void(0)" onclick="copiarLinkActivacion('${jefe.id}')">Copiar link de activación</a>` : ""}
             ${jefe ? `<a href="javascript:void(0)" onclick="toggleEditarCorreoJefe('${c.id}')">Corregir correo del jefe</a>` : ""}
             <a href="javascript:void(0)" style="color:#A32D2D;" onclick="eliminarCliente('${c.id}')">${aiPendingDeleteCliente === c.id ? "Confirmar eliminación" : "Eliminar empresa"}</a>
           </div>
@@ -4753,6 +4785,22 @@
         </div>
       </div>`;
       }).join("");
+    }
+    /**
+     * Copia el link personal de activación del jefe de mantención, para
+     * enviarlo por WhatsApp cuando el correo no llega o no se conoce con
+     * certeza. La persona completa sus propios datos al activar, así que no
+     * hace falta tenerlos bien cargados de antemano.
+     */
+    function copiarLinkActivacion(jefeId) {
+      clearAiError();
+      const url = location.origin + location.pathname + "?activar=" + encodeURIComponent(jefeId);
+      const avisar = () => aiSuccess("Link copiado. Envíaselo por WhatsApp; al abrirlo va a completar sus datos y elegir su clave.");
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(avisar).catch(() => window.prompt("Copia este link:", url));
+      } else {
+        window.prompt("Copia este link:", url);
+      }
     }
     function toggleEditarCorreoJefe(clienteId) {
       const form = document.getElementById("ec-form-" + clienteId);
