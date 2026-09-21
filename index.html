@@ -3570,7 +3570,7 @@
         </div>
         <div class="login-form-error" id="activar-cuenta-error"></div>
         <button class="login-form-submit" id="activar-cuenta-submit" onclick="submitActivarCuenta()">Activar y entrar</button>
-        <button class="login-form-back" onclick="goTo('login')">← Volver</button>
+        <button class="login-form-back" id="activar-cuenta-volver" onclick="goTo('login')">← Volver</button>
       </div>
     </div>
 
@@ -4616,8 +4616,23 @@
     /* ---------------- ACTIVACIÓN DE CUENTA (Jefe/Gerencia/Supervisor) ---------------- */
     const ROL_LABELS_ACTIVAR = { JEFE_MANTENCION: "Jefe de mantención", GERENCIA: "Gerencia", SUPERVISOR: "Supervisor" };
     let activarCuentaUsuarioId = null;
+    /** Muestra u oculta los campos de clave de la pantalla de activación. Cuando
+     *  la cuenta ya fue activada no basta con deshabilitarlos: quedaban en
+     *  pantalla en gris y parecía que igual se podía cambiar la clave. */
+    function mostrarCamposActivacion(visible) {
+      ["activar-cuenta-password", "activar-cuenta-password2"].forEach((id) => {
+        const el = document.getElementById(id);
+        const contenedor = el && el.closest(".login-form-field");
+        if (contenedor) contenedor.style.display = visible ? "" : "none";
+      });
+      const btn = document.getElementById("activar-cuenta-submit");
+      if (btn) btn.style.display = visible ? "" : "none";
+      const volver = document.getElementById("activar-cuenta-volver");
+      if (volver) volver.textContent = visible ? "← Volver" : "Ir a iniciar sesión";
+    }
     async function abrirActivarCuenta(usuarioId) {
       activarCuentaUsuarioId = usuarioId;
+      mostrarCamposActivacion(true);
       document.getElementById("activar-cuenta-password").value = "";
       document.getElementById("activar-cuenta-password2").value = "";
       document.getElementById("activar-cuenta-password").disabled = false;
@@ -4630,10 +4645,11 @@
       try {
         const info = await apiFetch("/auth/invitacion/" + usuarioId);
         if (info.estado !== "invitado") {
-          document.getElementById("activar-cuenta-intro").textContent = "Esta cuenta ya fue activada. Si no recuerdas tu clave, pide que te reenvíen la invitación.";
+          document.getElementById("activar-cuenta-intro").textContent = "Esta cuenta ya fue activada. Entra con tu correo y la clave que elegiste. Si no la recuerdas, pide que te reenvíen la invitación.";
           document.getElementById("activar-cuenta-password").disabled = true;
           document.getElementById("activar-cuenta-password2").disabled = true;
           document.getElementById("activar-cuenta-submit").disabled = true;
+          mostrarCamposActivacion(false);
           return;
         }
         const rolLabel = ROL_LABELS_ACTIVAR[info.rol] || info.rol;
@@ -4756,8 +4772,11 @@
       const btn = document.getElementById("ec-btn-" + clienteId);
       btn.disabled = true; btn.textContent = "Guardando…";
       try {
-        await apiFetch("/tecnicos/" + jefeId, { method: "PATCH", body: { email } });
-        const data = await apiFetch("/tecnicos/" + jefeId, { method: "PATCH", body: { estado: "invitado" } });
+        // Una sola llamada: cambia el correo y deja la cuenta como "invitada"
+        // en la misma operación. Antes eran dos peticiones seguidas, y si la
+        // segunda fallaba quedaba el correo corregido pero sin invitación
+        // enviada, sin que nada lo indicara.
+        const data = await apiFetch("/tecnicos/" + jefeId, { method: "PATCH", body: { email, estado: "invitado" } });
         if (data.emailInvitacion && data.emailInvitacion.enviado) {
           aiSuccess(`Correo corregido. Se reenvió la invitación a ${email}.`);
         } else {
