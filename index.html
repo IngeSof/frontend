@@ -3635,6 +3635,24 @@
         </div>
 
         <div id="ai-clientes-list" style="margin-top:18px;"></div>
+
+        <!-- Catálogo de plantillas de Ingenova. Como cada empresa tiene su
+             propia instalación con su propia base de datos, las plantillas se
+             llevan de una a otra por archivo: se descargan acá y se suben en
+             la instalación del cliente nuevo. -->
+        <div class="panel" style="margin-top:24px;">
+          <div class="panel-title">
+            <h3>Plantillas de línea</h3>
+            <div class="panel-sub">Descarga una plantilla para llevarla a la instalación de otro cliente, o importa un archivo que hayas exportado antes.</div>
+          </div>
+          <div id="ai-plantillas-list" style="margin-top:12px;"></div>
+          <div class="documento-upload-form" style="padding:0; margin-top:12px;">
+            <input type="file" id="ai-plantilla-file" accept="application/json,.json">
+            <div class="row">
+              <button id="ai-importar-btn" onclick="importarPlantillaArchivo()">Importar plantilla desde archivo</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -4755,6 +4773,78 @@
         aiError("No se pudieron cargar los clientes: " + e.message);
       }
       renderAiClientes();
+      cargarAiPlantillas();
+    }
+    let aiPlantillas = null;
+    async function cargarAiPlantillas() {
+      const cont = document.getElementById("ai-plantillas-list");
+      if (!cont) return;
+      cont.innerHTML = `<div class="empty-repuestos">Cargando…</div>`;
+      try {
+        aiPlantillas = await apiFetch("/plantillas/lineas");
+      } catch (e) {
+        aiPlantillas = [];
+        cont.innerHTML = `<div class="empty-repuestos">No se pudieron cargar las plantillas: ${e.message}</div>`;
+        return;
+      }
+      renderAiPlantillas();
+    }
+    function renderAiPlantillas() {
+      const cont = document.getElementById("ai-plantillas-list");
+      if (!cont) return;
+      if (!aiPlantillas || !aiPlantillas.length) {
+        cont.innerHTML = `<div class="empty-repuestos">Todavía no hay plantillas. Puedes crear una desde "Líneas y unidades" guardando una línea ya armada, o importar un archivo aquí abajo.</div>`;
+        return;
+      }
+      cont.innerHTML = aiPlantillas.map((p) => {
+        const unidades = (p.unidades || []).length;
+        const repuestos = (p.unidades || []).reduce((n, u) => n + ((u.repuestos || []).length), 0);
+        return `<div class="documento-row">
+        <div class="documento-info">
+          <span class="documento-nombre">${(p.nombre || "").replace(/</g, "&lt;")}</span>
+          <span class="documento-meta">${unidades} unidad${unidades === 1 ? "" : "es"} · ${repuestos} repuesto${repuestos === 1 ? "" : "s"}${p.descripcion ? " · " + p.descripcion.replace(/</g, "&lt;") : ""}</span>
+        </div>
+        <a href="javascript:void(0)" onclick="descargarPlantilla('${p.id}')">Descargar</a>
+      </div>`;
+      }).join("");
+    }
+    /** Descarga la plantilla como archivo, para subirla en otra instalación. */
+    async function descargarPlantilla(plantillaId) {
+      clearAiError();
+      try {
+        const doc = await apiFetch("/plantillas/lineas/" + plantillaId + "/exportar");
+        const nombreArchivo = "plantilla-" + (doc.plantilla.nombre || "linea").replace(/[^a-z0-9]+/gi, "-").toLowerCase() + ".json";
+        const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = nombreArchivo;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        aiSuccess(`Plantilla descargada como ${nombreArchivo}. Súbela en la instalación del otro cliente.`);
+      } catch (e) {
+        aiError("No se pudo descargar la plantilla: " + e.message);
+      }
+    }
+    async function importarPlantillaArchivo() {
+      clearAiError();
+      const input = document.getElementById("ai-plantilla-file");
+      if (!input || !input.files || !input.files[0]) { aiError("Elige el archivo de la plantilla antes de importar."); return; }
+      const btn = document.getElementById("ai-importar-btn");
+      btn.disabled = true; btn.textContent = "Importando…";
+      try {
+        const texto = await input.files[0].text();
+        let doc;
+        try { doc = JSON.parse(texto); } catch (e) { throw new Error("El archivo no tiene un formato válido."); }
+        const data = await apiFetch("/plantillas/importar", { method: "POST", body: doc });
+        const r = data.resumen || {};
+        input.value = "";
+        aiSuccess(`Plantilla "${data.plantilla.nombre}" importada: ${r.unidades || 0} unidades, ${r.repuestos || 0} repuestos${r.tareasCreadas ? ` y ${r.tareasCreadas} tareas nuevas en el catálogo` : ""}.`);
+        await cargarAiPlantillas();
+      } catch (e) {
+        aiError("No se pudo importar la plantilla: " + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = "Importar plantilla desde archivo";
+      }
     }
     function renderAiClientes() {
       const cont = document.getElementById("ai-clientes-list");
