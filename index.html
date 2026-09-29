@@ -5251,6 +5251,7 @@
         </div>
         <div style="margin-top:9px;display:flex;gap:14px;flex-wrap:wrap;">
           <a href="javascript:void(0)" onclick="togglePreguntasPauta('${p.id}')">${pautasAbiertas.has(p.id) ? "Ocultar preguntas" : "Ver preguntas"}</a>
+          <a href="javascript:void(0)" onclick="descargarPautaPdf('${p.id}')">Ver el PDF</a>
           <a href="javascript:void(0)" onclick="editarPauta('${p.id}')">Editar</a>
           <a href="javascript:void(0)" style="color:#A32D2D;" onclick="eliminarPauta('${p.id}')">${p.activa ? "Dar de baja" : "Eliminar"}</a>
         </div>
@@ -5603,9 +5604,14 @@
       }).join("");
 
       const abiertas = (r.respuestas || []).filter(x => !x.conforme && !x.cerradaAt).length;
+      const botonPdf = `<button class="add-btn" style="background:#4A4A47;" onclick="descargarRegistroPdf()">Descargar PDF para auditoría</button>`;
       const acciones = r.estado === "cerrado"
-        ? `<div class="chip verde" style="font-size:12px;padding:8px 14px;">Ciclo cerrado</div>`
-        : `<button class="add-btn" onclick="cerrarRegistro()" ${abiertas > 0 ? "disabled" : ""}>Revisar y cerrar el ciclo</button>
+        ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+             <span class="chip verde" style="font-size:12px;padding:8px 14px;">Ciclo cerrado</span>${botonPdf}
+           </div>`
+        : `<div style="display:flex;gap:10px;flex-wrap:wrap;">
+             <button class="add-btn" onclick="cerrarRegistro()" ${abiertas > 0 ? "disabled" : ""}>Revisar y cerrar el ciclo</button>${botonPdf}
+           </div>
            ${abiertas > 0 ? `<div style="font-size:12px;color:#A32D2D;margin-top:6px;">Quedan ${abiertas} no conformidad(es) por resolver. Un registro no se puede cerrar con anomalías abiertas.</div>` : ""}`;
 
       document.getElementById("registro-contenido").innerHTML = `
@@ -5616,6 +5622,302 @@
       ${r.fotoUrl ? `<div style="margin-bottom:12px;"><a href="${urlArchivo(r.fotoUrl)}" target="_blank" rel="noopener">Ver foto adjunta</a></div>` : ""}
       ${respuestas}
       <div style="margin-top:16px;">${acciones}</div>`;
+    }
+
+    /* ----- PDF para auditoría ----- */
+
+    /**
+     * Encabezado común de los PDF de formularios: identificación del documento
+     * controlado. Es lo primero que mira un auditor — nombre, norma, número de
+     * procedimiento y revisión — así que va enmarcado y arriba de todo.
+     * Devuelve la posición vertical donde sigue el contenido.
+     */
+    function encabezadoPdfFormulario(doc, datos, logoDataUrl) {
+      const margenX = 14;
+      const anchoUtil = 182;
+      let y = 16;
+
+      if (logoDataUrl) {
+        try {
+          const formato = /^data:image\/png/i.test(logoDataUrl) ? "PNG" : /^data:image\/webp/i.test(logoDataUrl) ? "WEBP" : "JPEG";
+          doc.addImage(logoDataUrl, formato, 178, 12, 18, 18);
+        } catch (e) { /* formato no soportado: se genera sin logo */ }
+      }
+
+      doc.setFontSize(9);
+      doc.setTextColor(110);
+      doc.text((datos.clienteNombre || "").toUpperCase(), margenX, y);
+      doc.setTextColor(0);
+      y += 7;
+      doc.setFontSize(15);
+      doc.setFont(undefined, "bold");
+      doc.splitTextToSize(datos.nombre || "Formulario", 155).forEach((linea) => {
+        doc.text(linea, margenX, y);
+        y += 7;
+      });
+      doc.setFont(undefined, "normal");
+      y += 1;
+
+      // Bloque de control documental
+      const filas = [
+        ["Norma", datos.norma],
+        ["N° de procedimiento", datos.codigoProcedimiento],
+        ["Revisión", datos.revision],
+        ["Planta", datos.plantaNombre],
+        ["Período", datos.periodoEtiqueta],
+      ].filter(([, v]) => v);
+      if (filas.length) {
+        const alto = 6 * filas.length + 5;
+        doc.setDrawColor(200);
+        doc.rect(margenX, y, anchoUtil, alto);
+        let yf = y + 6;
+        doc.setFontSize(9);
+        filas.forEach(([etiqueta, valor]) => {
+          doc.setTextColor(110);
+          doc.text(etiqueta + ":", margenX + 3, yf);
+          doc.setTextColor(0);
+          doc.setFont(undefined, "bold");
+          doc.text(String(valor), margenX + 44, yf);
+          doc.setFont(undefined, "normal");
+          yf += 6;
+        });
+        y += alto + 7;
+      }
+      doc.setTextColor(0);
+      return y;
+    }
+
+    /** Pie con la numeración de páginas, en todas las hojas. */
+    function pieDePaginaPdf(doc) {
+      const total = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= total; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(130);
+        doc.text(`Página ${i} de ${total}`, 105, 290, { align: "center" });
+        doc.setTextColor(0);
+      }
+    }
+
+    /**
+     * PDF del registro completado: lo que se le entrega al auditor cuando pide
+     * el control de una fecha puntual. Se basta solo — lleva la identificación
+     * del documento, cada respuesta, las no conformidades con su resolución, y
+     * quién lo completó y quién lo revisó, con sus fechas.
+     */
+    async function descargarRegistroPdf() {
+      const r = registroAbierto;
+      if (!r) return;
+      clearRegistroError();
+      const jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
+      if (!jsPDFCtor) { registroError("No se pudo cargar el generador de PDF. Revisa tu conexión e inténtalo de nuevo."); return; }
+
+      const s = r.snapshot || {};
+      let logoDataUrl = null;
+      const logoUrl = db.cliente && db.cliente.logoUrl;
+      if (logoUrl && db.cliente.id && !/\.svg(\?|$)/i.test(logoUrl)) {
+        logoDataUrl = await cargarLogoParaPdf(db.cliente.id);
+      }
+
+      const doc = new jsPDFCtor();
+      const margenX = 14;
+      let y = encabezadoPdfFormulario(doc, {
+        clienteNombre: (db.cliente && db.cliente.nombre) || "",
+        nombre: s.nombre, norma: s.norma, codigoProcedimiento: s.codigoProcedimiento,
+        revision: s.revision, plantaNombre: s.plantaNombre, periodoEtiqueta: r.periodoEtiqueta,
+      }, logoDataUrl);
+
+      // Respuestas
+      doc.setFontSize(11);
+      doc.setFont(undefined, "bold");
+      doc.text("Resultado del control", margenX, y);
+      doc.setFont(undefined, "normal");
+      y += 7;
+
+      (r.respuestas || []).forEach((x, i) => {
+        if (y > 258) { doc.addPage(); y = 18; }
+        doc.setFontSize(9.5);
+        const textoPregunta = doc.splitTextToSize(`${i + 1}. ${x.texto || ""}`, 140);
+        const alturaPregunta = textoPregunta.length * 5;
+        textoPregunta.forEach((linea, idx) => doc.text(linea, margenX, y + idx * 5));
+
+        doc.setFont(undefined, "bold");
+        doc.setTextColor(...(x.conforme ? [31, 122, 87] : [163, 45, 45]));
+        doc.text(x.conforme ? "CONFORME" : "NO CONFORME", 196, y, { align: "right" });
+        doc.setTextColor(0);
+        doc.setFont(undefined, "normal");
+        y += alturaPregunta;
+
+        if (x.tipo !== "marca") {
+          doc.setFontSize(9);
+          doc.setTextColor(90);
+          const esperado = x.valorEsperado ? `   (esperado: ${x.valorEsperado})` : "";
+          doc.text(`Anotado: ${x.valor || "—"}${esperado}`, margenX + 5, y);
+          doc.setTextColor(0);
+          y += 5;
+        }
+        if (x.observacion) {
+          doc.setFontSize(9);
+          doc.setTextColor(90);
+          doc.splitTextToSize(`Observación: ${x.observacion}`, 170).forEach((linea) => {
+            if (y > 278) { doc.addPage(); y = 18; }
+            doc.text(linea, margenX + 5, y);
+            y += 4.6;
+          });
+          doc.setTextColor(0);
+        }
+        // Gestión de la no conformidad: es lo que el auditor realmente revisa.
+        if (!x.conforme) {
+          const porQuien = x.cerradaPor ? `${x.cerradaPor.nombre || ""} ${x.cerradaPor.apellido || ""}`.trim() : "";
+          const textoGestion = x.cerradaAt
+            ? `Acción tomada: ${x.accion || "—"}  ·  Cerrada por ${porQuien} el ${new Date(x.cerradaAt).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}`
+            : "No conformidad SIN RESOLVER a la fecha de emisión de este documento.";
+          doc.setFontSize(9);
+          doc.setTextColor(163, 45, 45);
+          doc.splitTextToSize(textoGestion, 170).forEach((linea) => {
+            if (y > 278) { doc.addPage(); y = 18; }
+            doc.text(linea, margenX + 5, y);
+            y += 4.6;
+          });
+          doc.setTextColor(0);
+        }
+        y += 3;
+        doc.setDrawColor(228);
+        doc.line(margenX, y - 1.5, 196, y - 1.5);
+        y += 2;
+      });
+
+      if (r.observacion) {
+        if (y > 250) { doc.addPage(); y = 18; }
+        y += 3;
+        doc.setFontSize(9.5);
+        doc.setFont(undefined, "bold");
+        doc.text("Observación general", margenX, y);
+        doc.setFont(undefined, "normal");
+        y += 5;
+        doc.setFontSize(9);
+        doc.splitTextToSize(r.observacion, 178).forEach((linea) => {
+          if (y > 278) { doc.addPage(); y = 18; }
+          doc.text(linea, margenX, y);
+          y += 4.6;
+        });
+      }
+      if (r.fotoUrl) {
+        if (y > 270) { doc.addPage(); y = 18; }
+        y += 4;
+        doc.setFontSize(8.5);
+        doc.setTextColor(110);
+        doc.text("Este registro tiene una foto adjunta, disponible en el sistema.", margenX, y);
+        doc.setTextColor(0);
+        y += 5;
+      }
+
+      // Bloque de firmas: quién ejecutó y quién revisó, que es lo que cierra el ciclo.
+      if (y > 236) { doc.addPage(); y = 18; }
+      y += 8;
+      const quien = r.completadoPor ? `${r.completadoPor.nombre || ""} ${r.completadoPor.apellido || ""}`.trim() : "—";
+      const cerradoPor = r.cerradoPor ? `${r.cerradoPor.nombre || ""} ${r.cerradoPor.apellido || ""}`.trim() : null;
+      doc.setDrawColor(200);
+      doc.rect(margenX, y, 182, 26);
+      doc.setFontSize(8.5);
+      doc.setTextColor(110);
+      doc.text("COMPLETADO POR", margenX + 4, y + 6);
+      doc.text("REVISADO Y CERRADO POR", margenX + 96, y + 6);
+      doc.setTextColor(0);
+      doc.setFontSize(10);
+      doc.setFont(undefined, "bold");
+      doc.text(quien, margenX + 4, y + 13);
+      doc.text(cerradoPor || "Pendiente de revisión", margenX + 96, y + 13);
+      doc.setFont(undefined, "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(110);
+      doc.text(new Date(r.completadoAt).toLocaleString("es-CL", { dateStyle: "long", timeStyle: "short" }), margenX + 4, y + 20);
+      doc.text(r.cerradoAt ? new Date(r.cerradoAt).toLocaleString("es-CL", { dateStyle: "long", timeStyle: "short" }) : "—", margenX + 96, y + 20);
+      doc.setTextColor(0);
+      y += 32;
+
+      doc.setFontSize(7.5);
+      doc.setTextColor(140);
+      doc.text("Registro generado desde Ingenova Mantención. La identificación del usuario es la de su cuenta personal en el sistema.", margenX, y);
+      doc.setTextColor(0);
+
+      pieDePaginaPdf(doc);
+      const limpio = (t) => (t || "registro").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+      doc.save(`${limpio(s.codigoProcedimiento || s.nombre)}-${limpio(r.periodo)}.pdf`);
+    }
+
+    /**
+     * PDF del formulario en blanco: sirve para revisar cómo quedó el formato
+     * antes de ponerlo en uso, y para mostrarle al auditor el procedimiento
+     * mismo, no solo sus registros.
+     */
+    async function descargarPautaPdf(pautaId) {
+      clearFormError();
+      const p = (pautas || []).find((x) => x.id === pautaId);
+      if (!p) return;
+      const jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
+      if (!jsPDFCtor) { formError("No se pudo cargar el generador de PDF. Revisa tu conexión e inténtalo de nuevo."); return; }
+
+      let logoDataUrl = null;
+      const logoUrl = db.cliente && db.cliente.logoUrl;
+      if (logoUrl && db.cliente.id && !/\.svg(\?|$)/i.test(logoUrl)) {
+        logoDataUrl = await cargarLogoParaPdf(db.cliente.id);
+      }
+
+      const doc = new jsPDFCtor();
+      const margenX = 14;
+      let y = encabezadoPdfFormulario(doc, {
+        clienteNombre: (db.cliente && db.cliente.nombre) || "",
+        nombre: p.nombre, norma: p.norma, codigoProcedimiento: p.codigoProcedimiento,
+        revision: p.revision,
+        plantaNombre: ((db.plantas || []).find((x) => x.id === getPlantaId()) || {}).nombre || null,
+        periodoEtiqueta: null, // un formulario en blanco no pertenece a un período
+      }, logoDataUrl);
+
+      doc.setFontSize(9);
+      doc.setTextColor(110);
+      doc.text(`Frecuencia: ${(FRECUENCIA_LABEL[p.frecuencia] || p.frecuencia).toLowerCase()}   ·   ${p.alcance === "grupal" ? "Uno por planta" : "Cada técnico responde el suyo"}`, margenX, y);
+      doc.setTextColor(0);
+      y += 9;
+
+      doc.setFontSize(11);
+      doc.setFont(undefined, "bold");
+      doc.text("Preguntas del control", margenX, y);
+      doc.setFont(undefined, "normal");
+      y += 8;
+
+      (p.items || []).forEach((it, i) => {
+        if (y > 258) { doc.addPage(); y = 18; }
+        doc.setFontSize(9.5);
+        const lineas = doc.splitTextToSize(`${i + 1}. ${it.texto || ""}`, 128);
+        lineas.forEach((linea, idx) => doc.text(linea, margenX, y + idx * 5));
+        // Espacio en blanco a la derecha, como en el formulario en papel
+        doc.setFontSize(8.5);
+        doc.setTextColor(140);
+        doc.text(it.tipo === "marca" ? "Conforme  ☐      No conforme  ☐" : (it.valorEsperado ? `Anotar (esperado: ${it.valorEsperado}): ______` : "Anotar: ____________"), 196, y, { align: "right" });
+        doc.setTextColor(0);
+        y += Math.max(lineas.length * 5, 6) + 3;
+        doc.setDrawColor(228);
+        doc.line(margenX, y - 2, 196, y - 2);
+        y += 2;
+      });
+
+      y += 6;
+      if (y > 250) { doc.addPage(); y = 18; }
+      doc.setDrawColor(200);
+      doc.rect(margenX, y, 182, 24);
+      doc.setFontSize(8.5);
+      doc.setTextColor(110);
+      doc.text("COMPLETADO POR", margenX + 4, y + 7);
+      doc.text("REVISADO Y CERRADO POR", margenX + 96, y + 7);
+      doc.setDrawColor(190);
+      doc.line(margenX + 4, y + 18, margenX + 80, y + 18);
+      doc.line(margenX + 96, y + 18, margenX + 172, y + 18);
+      doc.setTextColor(0);
+
+      pieDePaginaPdf(doc);
+      const limpio = (t) => (t || "formulario").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+      doc.save(`formulario-${limpio(p.codigoProcedimiento || p.nombre)}.pdf`);
     }
 
     async function cerrarNoConformidad(respuestaId) {
