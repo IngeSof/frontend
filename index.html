@@ -1172,7 +1172,11 @@
     .detail-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(20, 20, 20, 0.42);
+      /* El fondo se difumina para que la ventana de adelante destaque y no
+         compita visualmente con el contenido de atrás. */
+      background: rgba(20, 20, 20, 0.38);
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
       display: none;
       align-items: flex-end;
       justify-content: center;
@@ -1832,7 +1836,11 @@
     .admin-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(20, 20, 20, 0.42);
+      /* Mismo criterio que .detail-overlay: fondo difuminado para que la
+         ventana de adelante se lea con claridad. */
+      background: rgba(20, 20, 20, 0.38);
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
       display: none;
       align-items: center;
       justify-content: center;
@@ -5153,6 +5161,7 @@
     let historialRegistros = null;
     let pautaItemsDraft = [];
     let pautaEditandoId = null;
+    let pautasAbiertas = new Set(); // formularios con su vista previa desplegada
     let tabFormularios = "por-revisar";
     let registroAbierto = null;
 
@@ -5241,11 +5250,47 @@
           ${(p.items || []).length} pregunta${(p.items || []).length === 1 ? "" : "s"} · Período vigente: ${p.periodoActualEtiqueta} · ${p._count && p._count.registros ? p._count.registros : 0} registro(s)
         </div>
         <div style="margin-top:9px;display:flex;gap:14px;flex-wrap:wrap;">
+          <a href="javascript:void(0)" onclick="togglePreguntasPauta('${p.id}')">${pautasAbiertas.has(p.id) ? "Ocultar preguntas" : "Ver preguntas"}</a>
           <a href="javascript:void(0)" onclick="editarPauta('${p.id}')">Editar</a>
           <a href="javascript:void(0)" style="color:#A32D2D;" onclick="eliminarPauta('${p.id}')">${p.activa ? "Dar de baja" : "Eliminar"}</a>
         </div>
+        ${pautasAbiertas.has(p.id) ? vistaPreviaPauta(p) : ""}
       </div>`;
       }).join("");
+    }
+
+    /**
+     * Vista previa del formulario tal como lo va a ver el técnico. El jefe
+     * necesita poder revisar lo que creó antes de que salga a terreno, y para
+     * eso entrar a "Editar" no sirve: ahí ve campos de formulario, no el
+     * contenido. Acá ve las preguntas tal cual, con su tipo y su valor
+     * esperado.
+     */
+    function vistaPreviaPauta(p) {
+      const items = p.items || [];
+      if (!items.length) return `<div class="empty-note" style="margin-top:10px;">Este formulario todavía no tiene preguntas.</div>`;
+      const filas = items.map((it, i) => {
+        const etiquetaTipo = TIPO_ITEM_LABEL[it.tipo] || it.tipo;
+        const esperado = it.tipo === "numero" && it.valorEsperado
+          ? ` · deberían ser <strong>${String(it.valorEsperado).replace(/</g, "&lt;")}</strong>`
+          : "";
+        return `<div style="padding:7px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:13px;"><span style="color:var(--ink-60);font-weight:700;">${i + 1}.</span> ${(it.texto || "").replace(/</g, "&lt;")}</div>
+        <div style="font-size:11.5px;color:var(--ink-60);margin-top:3px;">${etiquetaTipo}${esperado}</div>
+      </div>`;
+      }).join("");
+      const pideFoto = p.foto === "obligatoria" ? "Pide foto obligatoria"
+        : p.foto === "no" ? "No pide foto" : "Foto opcional";
+      return `<div style="margin-top:10px;padding:12px 14px;background:#FBFBFA;border:1px solid var(--line);border-radius:12px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-60);margin-bottom:8px;">Así lo verá el técnico</div>
+      ${filas}
+      <div style="font-size:11.5px;color:var(--ink-60);margin-top:9px;">${pideFoto} · Se responde ${(FRECUENCIA_LABEL[p.frecuencia] || p.frecuencia).toLowerCase()}${p.alcance === "grupal" ? " · uno solo para toda la planta" : " · cada técnico responde el suyo"}</div>
+    </div>`;
+    }
+    function togglePreguntasPauta(pautaId) {
+      if (pautasAbiertas.has(pautaId)) pautasAbiertas.delete(pautaId);
+      else pautasAbiertas.add(pautaId);
+      renderPautas();
     }
 
     function toggleNuevaPauta() {
