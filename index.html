@@ -1671,6 +1671,31 @@
       border-color: var(--orange);
     }
 
+    .tecnicos-check-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      max-height: 168px;
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 7px 9px;
+      background: var(--white);
+    }
+
+    .tecnico-check {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 13px;
+      padding: 5px 3px;
+      cursor: pointer;
+      border-radius: 7px;
+    }
+
+    .tecnico-check:hover { background: #F6F6F4; }
+    .tecnico-check input { width: 15px; height: 15px; flex-shrink: 0; cursor: pointer; }
+
     /* ---------- Formularios de inocuidad ---------- */
     .admin-btn-badge {
       display: inline-flex;
@@ -4126,7 +4151,10 @@
           intentosFallidos: 0,
         })),
         ordenes: ordenes.map(o => ({
-          id: o.id, tipo: o.tipo, unidadId: o.unidadId, tecnicoId: o.tecnicoId, estado: o.estado, folio: o.folio || null,
+          id: o.id, tipo: o.tipo, unidadId: o.unidadId, estado: o.estado, folio: o.folio || null,
+          // Una preventiva puede ir a varios técnicos, todos responsables.
+          tecnicoIds: (o.tecnicos || []).map(t => t.usuarioId),
+          tecnicosNombres: (o.tecnicos || []).map(t => `${(t.usuario && t.usuario.nombre) || ""} ${(t.usuario && t.usuario.apellido) || ""}`.trim()),
           fechaInicio: (o.fechaInicio || "").slice(0, 10), fechaFin: (o.fechaFin || "").slice(0, 10),
           fechaCompletado: o.fechaCompletado ? o.fechaCompletado.slice(0, 10) : null,
           checklist: (o.checklist || []).map(c => ({ id: c.id, nombre: c.nombre, subtareas: c.subtareas || [], completado: !!c.completado })),
@@ -4136,7 +4164,13 @@
         catalogoTareas: catalogoTareas.map(c => ({ id: c.id, nombre: c.nombre, subtareas: c.subtareas || [] })),
         correctivas: correctivas.map(c => ({
           id: c.id, lineaId: c.lineaId, problema: c.problema, observacion: c.observacion, estado: c.estado, creada: c.createdAt, folio: c.folio || null,
-          tomadaPorId: c.tomadaPorId || null, tomadaPorNombre: c.tomadaPor ? ((c.tomadaPor.nombre || "") + " " + (c.tomadaPor.apellido || "")).trim() : null,
+          participantes: (c.participantes || []).map(p => ({
+            usuarioId: p.usuarioId, rol: p.rol, minutos: p.minutos, enCurso: p.enCurso,
+            nombre: `${(p.usuario && p.usuario.nombre) || ""} ${(p.usuario && p.usuario.apellido) || ""}`.trim(),
+          })),
+          minutosHombre: c.minutosHombre || 0,
+          tomadaPorId: c.tomadaPor ? c.tomadaPor.id : null,
+          tomadaPorNombre: c.tomadaPor ? ((c.tomadaPor.nombre || "") + " " + (c.tomadaPor.apellido || "")).trim() : null,
           resueltaPorNombre: c.resueltaPor ? ((c.resueltaPor.nombre || "") + " " + (c.resueltaPor.apellido || "")).trim() : null,
           solucion: c.solucion || null, fotoUrl: c.fotoUrl || null,
         })),
@@ -4335,7 +4369,9 @@
       const monday = mondayOfWeek(today);
       const friday = new Date(monday); friday.setDate(monday.getDate() + 4);
       let totalHoras = 0;
-      db.ordenes.filter(o => o.tecnicoId === tecnicoId && o.tipo === "preventiva" && o.fechaInicio && o.fechaFin).forEach(o => {
+      // Un trabajo compartido cuenta completo para cada técnico asignado: los
+      // tres comprometieron el período entero, no un tercio cada uno.
+      db.ordenes.filter(o => (o.tecnicoIds || []).includes(tecnicoId) && o.tipo === "preventiva" && o.fechaInicio && o.fechaFin).forEach(o => {
         const days = businessDaysOverlap(parseIso(o.fechaInicio), parseIso(o.fechaFin), monday, friday);
         totalHoras += days * STANDARD_DAY_HOURS;
       });
@@ -4344,7 +4380,7 @@
     function ubicacionActualTecnico(tecnicoId) {
       const today = todayDate();
       const activas = db.ordenes.filter(o => {
-        if (o.tecnicoId !== tecnicoId || !o.fechaInicio || !o.fechaFin) return false;
+        if (!(o.tecnicoIds || []).includes(tecnicoId) || !o.fechaInicio || !o.fechaFin) return false;
         const ini = parseIso(o.fechaInicio), fin = parseIso(o.fechaFin);
         return ini <= today && today <= fin && o.estado !== "verde";
       });
@@ -4488,7 +4524,7 @@
 
       let ordenesScope = db.ordenes;
       if (state.mode === "tecnico" && state.tecnicoId) {
-        ordenesScope = ordenesScope.filter(o => o.tecnicoId === state.tecnicoId);
+        ordenesScope = ordenesScope.filter(o => (o.tecnicoIds || []).includes(state.tecnicoId));
       }
 
       let bodyHtml = "";
@@ -4496,7 +4532,7 @@
         let anyRow = false;
         bodyHtml = db.tecnicos.map(t => {
           const rows = ordenesScope
-            .filter(o => o.tecnicoId === t.id)
+            .filter(o => (o.tecnicoIds || []).includes(t.id))
             .map(o => ganttOrderRow(o, range))
             .filter(Boolean);
           if (rows.length === 0) return "";
@@ -4528,90 +4564,6 @@
     }
 
 
-    function seedData() {
-      return {
-        packing: { id: "pk1", nombre: "Packing Demo Ingenova", direccion: "Ruta I-50, Chimbarongo" },
-        config: { jornadaSemanal: DEFAULT_JORNADA_SEMANAL },
-        lineas: [
-          { id: "l1", nombre: "Cereza", colorHex: "#F82402" },
-          { id: "l2", nombre: "Kiwi", colorHex: "#FF6E00" },
-          { id: "l3", nombre: "Manzana", colorHex: "#D69A00" },
-        ],
-        unidades: [
-          { id: "u1", lineaId: "l1", nombre: "Volcador de fruta" },
-          { id: "u2", lineaId: "l1", nombre: "Cortador de pedicelo #3" },
-          { id: "u3", lineaId: "l1", nombre: "Calibrador" },
-          { id: "u4", lineaId: "l2", nombre: "Elevador de fruta" },
-          { id: "u5", lineaId: "l2", nombre: "Alineador" },
-          { id: "u6", lineaId: "l3", nombre: "T\u00fanel de fr\u00edo" },
-        ],
-        especialidades: [
-          { id: "e1", nombre: "Electromec\u00e1nico" },
-          { id: "e2", nombre: "Cortadores / Pedicelo" },
-          { id: "e3", nombre: "Fr\u00edo / Refrigeraci\u00f3n" },
-          { id: "e4", nombre: "Cintas transportadoras" },
-        ],
-        tecnicos: [
-          { id: "t1", nombre: "Mat\u00edas", apellido: "Rojas", init: "MR", especialidadId: "e1", rut: "18.234.567-8", mail: "matias.rojas@ingenovaservices.cl", telefono: "+56 9 1234 5678", estado: "activo", pin: "1234", intentosFallidos: 0 },
-          { id: "t2", nombre: "Camila", apellido: "Vidal", init: "CV", especialidadId: "e2", rut: "17.345.678-9", mail: "camila.vidal@ingenovaservices.cl", telefono: "+56 9 2345 6789", estado: "activo", pin: "1234", intentosFallidos: 0 },
-          { id: "t3", nombre: "Jorge", apellido: "Pizarro", init: "JP", especialidadId: "e3", rut: "16.456.789-0", mail: "jorge.pizarro@ingenovaservices.cl", telefono: "+56 9 3456 7890", estado: "activo", pin: "1234", intentosFallidos: 0 },
-          { id: "t4", nombre: "Diego", apellido: "Andrade", init: "DA", especialidadId: "e4", rut: "19.567.890-1", mail: "diego.andrade@ingenovaservices.cl", telefono: "+56 9 4567 8901", estado: "invitado", pin: null, intentosFallidos: 0 },
-        ],
-        ordenes: [
-          {
-            id: "o1", tipo: "preventiva", unidadId: "u1", tecnicoId: "t1", estado: "rojo", fechaInicio: isoDate(-1), fechaFin: isoDate(0),
-            checklist: [
-              { id: "c1", nombre: "Limpieza general de la unidad", subtareas: [], completado: true },
-              { id: "c2", nombre: "Desarme de tapa protectora", subtareas: [], completado: false },
-              { id: "c3", nombre: "Revisi\u00f3n de rodamientos", subtareas: ["Verificar holgura axial", "Verificar ruido an\u00f3malo"], completado: false },
-              { id: "c4", nombre: "Cambio de correa de transmisi\u00f3n", subtareas: [], completado: false },
-              { id: "c5", nombre: "Lubricaci\u00f3n de ejes", subtareas: [], completado: false },
-            ], observacion: ""
-          },
-          {
-            id: "o2", tipo: "preventiva", unidadId: "u2", tecnicoId: "t1", estado: "amarillo", fechaInicio: isoDate(0), fechaFin: isoDate(2),
-            checklist: [
-              { id: "c6", nombre: "Limpieza general de la unidad", subtareas: [], completado: true },
-              { id: "c7", nombre: "Revisi\u00f3n de cuchillas", subtareas: [], completado: true },
-              { id: "c8", nombre: "Ajuste de tensi\u00f3n de cadena", subtareas: [], completado: false },
-              { id: "c9", nombre: "Lubricaci\u00f3n", subtareas: [], completado: false },
-            ], observacion: ""
-          },
-          {
-            id: "o3", tipo: "preventiva", unidadId: "u4", tecnicoId: "t1", estado: "verde", fechaInicio: isoDate(-3), fechaFin: isoDate(-1), fechaCompletado: isoDate(0),
-            checklist: [
-              { id: "c10", nombre: "Limpieza general de la unidad", subtareas: [], completado: true },
-              { id: "c11", nombre: "Revisi\u00f3n de rodamientos", subtareas: [], completado: true },
-              { id: "c12", nombre: "Cambio de rodamientos 6204/6205", subtareas: [], completado: true },
-            ], observacion: ""
-          },
-        ],
-        clasesRepuesto: [
-          { id: "cr1", nombre: "Rodamiento" },
-          { id: "cr2", nombre: "Motorreductor" },
-          { id: "cr3", nombre: "Correa" },
-          { id: "cr4", nombre: "Electrov\u00e1lvula" },
-          { id: "cr5", nombre: "Contactor" },
-        ],
-        repuestos: [
-          { id: "r1", unidadId: "u1", claseId: "cr2", marca: "WEG", modelo: "W22 2CV", descripcion: "Motor superior, lado entrada de fruta", cantidad: 1, codigoInterno: "" },
-          { id: "r2", unidadId: "u1", claseId: "cr2", marca: "WEG", modelo: "W22 2CV", descripcion: "Motor central, bajo la tolva", cantidad: 1, codigoInterno: "" },
-          { id: "r3", unidadId: "u1", claseId: "cr2", marca: "WEG", modelo: "W22 3CV", descripcion: "Motor inferior, lado descarga", cantidad: 1, codigoInterno: "" },
-          { id: "r4", unidadId: "u1", claseId: "cr1", marca: "SKF", modelo: "6204-2RS", descripcion: "Rodamiento eje principal", cantidad: 4, codigoInterno: "" },
-          { id: "r5", unidadId: "u1", claseId: "cr3", marca: "Optibelt", modelo: "SPZ 1250", descripcion: "Correa de transmisi\u00f3n", cantidad: 2, codigoInterno: "" },
-        ],
-        catalogoTareas: [
-          { id: "ct1", nombre: "Limpieza general de la unidad", subtareas: [] },
-          { id: "ct2", nombre: "Desarme de unidad", subtareas: [] },
-          { id: "ct3", nombre: "Revisi\u00f3n de rodamientos", subtareas: ["Verificar holgura axial", "Verificar ruido an\u00f3malo"] },
-          { id: "ct4", nombre: "Cambio de correas", subtareas: [] },
-          { id: "ct5", nombre: "Cambio de rodamientos", subtareas: [] },
-        ],
-        correctivas: [],
-        auditLog: [],
-        auditoria: []
-      };
-    }
 
     let db = null;
     let dashboardRefreshTimer = null; // auto-actualización del dashboard del Jefe
@@ -4641,65 +4593,7 @@
       { label: "Operacional", icon: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>' },
     ];
 
-    function migrateDb(data) {
-      const defaults = seedData();
-      if (!data.config) data.config = { jornadaSemanal: DEFAULT_JORNADA_SEMANAL };
-      if (typeof data.config.jornadaSemanal !== "number") data.config.jornadaSemanal = DEFAULT_JORNADA_SEMANAL;
-      if (!Array.isArray(data.config.ordenLineas)) data.config.ordenLineas = (data.lineas || []).map(l => l.id);
-      if (!Array.isArray(data.clasesRepuesto)) data.clasesRepuesto = [];
-      if (!Array.isArray(data.repuestos)) data.repuestos = [];
-      if (!Array.isArray(data.correctivas)) data.correctivas = [];
-      if (!Array.isArray(data.unidades)) data.unidades = [];
-      if (!Array.isArray(data.lineas)) data.lineas = [];
-      if (!Array.isArray(data.tecnicos)) data.tecnicos = [];
-      if (!Array.isArray(data.ordenes)) data.ordenes = [];
-      if (!Array.isArray(data.especialidades)) data.especialidades = [];
-      if (!Array.isArray(data.auditoria)) data.auditoria = [];
-      if (!Array.isArray(data.catalogoTareas)) data.catalogoTareas = defaults.catalogoTareas;
-      data.tecnicos.forEach(t => {
-        if (!t.especialidadId) {
-          if (t.especialidad) {
-            let esp = data.especialidades.find(e => e.nombre.toLowerCase() === t.especialidad.toLowerCase());
-            if (!esp) { esp = { id: "e" + Date.now() + "-" + Math.random().toString(36).slice(2, 7), nombre: t.especialidad }; data.especialidades.push(esp); }
-            t.especialidadId = esp.id;
-          }
-        }
-        if (!t.apellido) t.apellido = "";
-        if (!t.rut) t.rut = "";
-        if (!t.mail) t.mail = "";
-        if (!t.telefono) t.telefono = "";
-        if (!t.init) t.init = ((t.nombre || "")[0] + ((t.apellido || "")[0] || "")).toUpperCase();
-        if (!t.estado) t.estado = t.pin ? "activo" : "invitado";
-        if (t.pin === undefined) t.pin = null;
-        if (typeof t.intentosFallidos !== "number") t.intentosFallidos = 0;
-        delete t.especialidad;
-        delete t.lineaIds;
-        delete t.carga;
-      });
-      data.ordenes.forEach(o => {
-        if (!o.fechaInicio || !o.fechaFin) {
-          o.fechaInicio = o.fechaInicio || isoDate(0);
-          o.fechaFin = o.fechaFin || isoDate(o.estado === "rojo" ? 0 : o.estado === "amarillo" ? 2 : 5);
-        }
-        if (o.estado === "verde" && !o.fechaCompletado) o.fechaCompletado = o.fechaFin;
-      });
-      if (!data.packing) data.packing = defaults.packing;
-      return data;
-    }
 
-    async function loadDb() {
-      try {
-        const res = await window.storage.get("ingenova-db-v2", false);
-        if (res && res.value) {
-          return migrateDb(JSON.parse(res.value));
-        }
-      } catch (e) {
-        console.log("No hay datos guardados a\u00fan, se inicializa el demo.", e);
-      }
-      const seeded = seedData();
-      try { await window.storage.set("ingenova-db-v2", JSON.stringify(seeded), false); } catch (e) { console.error("Error guardando datos iniciales", e); }
-      return seeded;
-    }
 
     let saveToastTimer = null;
     function showSaveToast(msg) {
@@ -4740,23 +4634,6 @@
       return d.toLocaleDateString("es-CL") + " " + hhmm;
     }
 
-    async function saveDb() {
-      const maxAttempts = 3;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          await window.storage.set("ingenova-db-v2", JSON.stringify(db), false);
-          return true;
-        } catch (e) {
-          if (attempt === maxAttempts) {
-            console.error("Error guardando en la base de datos (tras " + maxAttempts + " intentos)", e);
-            showSaveToast("No se pudo guardar el \u00faltimo cambio (problema de conexi\u00f3n). Sigue disponible en esta sesi\u00f3n; vuelve a intentarlo en un momento.");
-            return false;
-          }
-          await new Promise(r => setTimeout(r, 400 * attempt));
-        }
-      }
-      return false;
-    }
 
     async function boot() {
       ensureDb();
@@ -6385,22 +6262,30 @@
     function lineaById(id) { return db.lineas.find(l => l.id === id); }
     function unidadById(id) { return db.unidades.find(u => u.id === id); }
     function unidadesDeLinea(lineaId) { return db.unidades.filter(u => u.lineaId === lineaId); }
-    function ordenesDeUnidad(unidadId) { return db.ordenes.filter(o => o.unidadId === unidadId); }
-    function repuestosDeUnidad(unidadId) { return repuestosCache[unidadId] || []; }
+    /**
+     * Repuestos de una unidad, con los de la especialidad del técnico primero.
+     * Filtrar no es esconder: se muestran los suyos y se avisa cuántos quedan
+     * fuera, con un botón para verlos. A un mecánico frente a una máquina
+     * detenida no se le puede negar qué contactor lleva.
+     */
+    function repuestosDeUnidad(unidadId) {
+      const todos = repuestosCache[unidadId] || [];
+      if (verTodosLosRepuestos || !miEspecialidad) return todos;
+      const mios = todos.filter(r => r.deMiEspecialidad);
+      return mios.length ? mios : todos;
+    }
+    function repuestosOcultosDeUnidad(unidadId) {
+      if (verTodosLosRepuestos || !miEspecialidad) return 0;
+      const todos = repuestosCache[unidadId] || [];
+      const mios = todos.filter(r => r.deMiEspecialidad);
+      return mios.length ? todos.length - mios.length : 0;
+    }
+    function alternarVerTodosLosRepuestos() {
+      verTodosLosRepuestos = !verTodosLosRepuestos;
+      renderAdmin();
+    }
     function claseById(id) { return db.clasesRepuesto.find(c => c.id === id); }
-    function findOrCreateClase(nombre) {
-      const n = nombre.trim();
-      let c = db.clasesRepuesto.find(x => x.nombre.toLowerCase() === n.toLowerCase());
-      if (!c) { c = { id: "cr" + Date.now() + "-" + Math.random().toString(36).slice(2, 7), nombre: n }; db.clasesRepuesto.push(c); }
-      return c;
-    }
     function especialidadById(id) { return db.especialidades.find(e => e.id === id); }
-    function findOrCreateEspecialidad(nombre) {
-      const n = nombre.trim();
-      let e = db.especialidades.find(x => x.nombre.toLowerCase() === n.toLowerCase());
-      if (!e) { e = { id: "e" + Date.now() + "-" + Math.random().toString(36).slice(2, 7), nombre: n }; db.especialidades.push(e); }
-      return e;
-    }
 
     function lineasOrdenadas() {
       const orden = (db.config.ordenLineas || []).filter(id => db.lineas.some(l => l.id === id));
@@ -6549,7 +6434,7 @@
     function renderTecnico() {
       const tecnico = db.tecnicos.find(t => t.id === currentTecnicoId);
       document.getElementById("tec-greet-name").textContent = `Hola${tecnico ? ", " + tecnico.nombre : ""} \u{1F44B}`;
-      const misOrdenes = db.ordenes.filter(o => o.tecnicoId === currentTecnicoId);
+      const misOrdenes = db.ordenes.filter(o => (o.tecnicoIds || []).includes(currentTecnicoId));
       document.getElementById("tec-count").textContent = misOrdenes.length;
       document.getElementById("task-list").innerHTML = misOrdenes.map((o) => {
         const total = o.checklist.length;
@@ -6585,13 +6470,32 @@
       list.innerHTML = abiertas.map(c => {
         const linea = lineaById(c.lineaId);
         const enProceso = c.estado === "en_proceso";
-        const laToméYo = enProceso && c.tomadaPorId === currentTecnicoId;
+        const participantes = c.participantes || [];
+        const miParticipacion = participantes.find(p => p.usuarioId === currentTecnicoId && p.enCurso);
+        const responsable = participantes.find(p => p.rol === "responsable");
+        const soyResponsable = responsable && responsable.usuarioId === currentTecnicoId;
         let acciones = "";
         if (!enProceso) {
           acciones = `<div class="cc-actions"><button class="btn-tomar" onclick="tomarCorrectiva('${c.id}')">Tomar</button></div>`;
-        } else if (laToméYo) {
-          acciones = `<div class="cc-actions"><button class="btn-resolver" onclick="abrirResolverCorrectiva('${c.id}')">Resolver</button></div>`;
+        } else if (miParticipacion) {
+          // Quien ya está trabajando puede resolverla o salir del apoyo cuando
+          // termina su parte: su tiempo no puede seguir corriendo hasta el
+          // cierre si ya volvió a lo suyo.
+          acciones = `<div class="cc-actions">
+            <button class="btn-resolver" onclick="abrirResolverCorrectiva('${c.id}')">Resolver</button>
+            ${soyResponsable ? "" : `<button class="btn-tomar" onclick="salirDeCorrectiva('${c.id}')">Salir del apoyo</button>`}
+          </div>`;
+        } else {
+          // La tomó otro: cualquiera puede sumarse como apoyo.
+          acciones = `<div class="cc-actions"><button class="btn-tomar" onclick="tomarCorrectiva('${c.id}')">Sumarme como apoyo</button></div>`;
         }
+        const apoyos = participantes.filter(p => p.rol === "apoyo");
+        const detalleEquipo = enProceso ? `
+      <div class="cc-meta">
+        ${responsable ? `Responsable: ${responsable.nombre.replace(/</g, "&lt;")}${responsable.enCurso ? "" : " (ya salió)"}` : "Sin responsable"}
+        ${apoyos.length ? `<br>Apoyo: ${apoyos.map(a => `${a.nombre.replace(/</g, "&lt;")} (${formatoMinutos(a.minutos)}${a.enCurso ? "" : ", salió"})`).join(" · ")}` : ""}
+        ${miParticipacion ? `<br><strong>Estás trabajando en esta correctiva · ${formatoMinutos(miParticipacion.minutos)}</strong>` : ""}
+      </div>` : "";
         return `<div class="correctiva-card ${enProceso ? "en-proceso" : ""}">
       <div class="cc-top">
         <div>
@@ -6600,26 +6504,57 @@
         </div>
       </div>
       ${c.observacion ? `<div class="cc-obs">${c.observacion.replace(/</g, "&lt;")}</div>` : ""}
-      <div class="cc-meta">
-        ${enProceso ? (laToméYo ? "La tomaste t\u00fa \u2014 puedes resolverla." : `En proceso por ${(c.tomadaPorNombre || "otro t\u00e9cnico").replace(/</g, "&lt;")}.`) : "Sin tomar todav\u00eda."}
-      </div>
+      ${enProceso ? detalleEquipo : `<div class="cc-meta">Sin tomar todav\u00eda.</div>`}
       ${acciones}
     </div>`;
       }).join("");
     }
 
+    /** Minutos en formato legible: 95 → "1 h 35 min". */
+    function formatoMinutos(min) {
+      const m = Math.max(0, Math.round(min || 0));
+      if (m < 60) return m + " min";
+      const h = Math.floor(m / 60);
+      const resto = m % 60;
+      return resto ? `${h} h ${String(resto).padStart(2, "0")} min` : `${h} h`;
+    }
+    /** Sale del apoyo sin cerrar la correctiva. */
+    async function salirDeCorrectiva(id) {
+      try {
+        const actualizada = await apiFetch("/correctivas/" + id + "/salir", { method: "POST" });
+        aplicarCorrectivaActualizada(id, actualizada);
+        renderCorrectivasTecnico();
+        showSaveToast("Saliste del apoyo. Tu tiempo quedó registrado.");
+      } catch (e) {
+        showSaveToast("No se pudo salir del apoyo: " + e.message);
+      }
+    }
+    /** Vuelca al estado local lo que devolvió el servidor para una correctiva. */
+    function aplicarCorrectivaActualizada(id, actualizada) {
+      const c = db.correctivas.find(x => x.id === id);
+      if (!c || !actualizada) return;
+      c.estado = actualizada.estado;
+      c.minutosHombre = actualizada.minutosHombre || 0;
+      c.participantes = (actualizada.participantes || []).map(p => ({
+        usuarioId: p.usuarioId, rol: p.rol, minutos: p.minutos, enCurso: p.enCurso,
+        nombre: `${(p.usuario && p.usuario.nombre) || ""} ${(p.usuario && p.usuario.apellido) || ""}`.trim(),
+      }));
+      const resp = c.participantes.find(p => p.rol === "responsable");
+      c.tomadaPorId = resp ? resp.usuarioId : null;
+      c.tomadaPorNombre = resp ? resp.nombre : null;
+    }
     async function tomarCorrectiva(id) {
       try {
         const actualizada = await apiFetch("/correctivas/" + id + "/en-proceso", { method: "PATCH" });
-        const c = db.correctivas.find(x => x.id === id);
-        if (c) {
-          c.estado = actualizada.estado;
-          c.tomadaPorId = actualizada.tomadaPorId;
-          c.tomadaPorNombre = actualizada.tomadaPor ? ((actualizada.tomadaPor.nombre || "") + " " + (actualizada.tomadaPor.apellido || "")).trim() : null;
-        }
+        aplicarCorrectivaActualizada(id, actualizada);
         renderCorrectivasTecnico();
+        const soyResponsable = (actualizada.participantes || [])
+          .some(p => p.rol === "responsable" && p.usuarioId === currentTecnicoId);
+        showSaveToast(soyResponsable
+          ? "Tomaste la correctiva. Quedas como responsable."
+          : "Te sumaste como apoyo. Tu tiempo se está contando.");
       } catch (e) {
-        alert("No se pudo tomar la correctiva: " + e.message);
+        showSaveToast("No se pudo tomar la correctiva: " + e.message);
       }
     }
 
@@ -7097,7 +7032,20 @@
             ${isOpen ? `
             <div class="repuestos-panel">
               ${repuestosCache[u.id] === undefined ? `<div class="empty-repuestos">Cargando repuestos\u2026</div>` :
-                reps.length === 0 ? `<div class="empty-repuestos">Sin repuestos a\u00fan.</div>` : reps.map(r => {
+                (() => {
+                  const ocultos = repuestosOcultosDeUnidad(u.id);
+                  // Se avisa cuántos quedaron fuera del filtro: el técnico sabe
+                  // que hay más y decide, en vez de que el sistema se los oculte.
+                  return ocultos > 0 || (verTodosLosRepuestos && miEspecialidad)
+                    ? `<div class="empty-repuestos" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;text-align:left;">
+                        <span style="flex:1;min-width:150px;">${ocultos > 0
+                          ? `Hay ${ocultos} repuesto${ocultos === 1 ? "" : "s"} de otras especialidades en esta unidad.`
+                          : `Mostrando todos los repuestos, no solo los de ${(miEspecialidad && miEspecialidad.nombre || "tu especialidad").replace(/</g, "&lt;")}.`}</span>
+                        <a href="javascript:void(0)" onclick="alternarVerTodosLosRepuestos()">${verTodosLosRepuestos ? "Ver solo los míos" : "Ver todos"}</a>
+                      </div>`
+                    : "";
+                })() +
+                (reps.length === 0 ? `<div class="empty-repuestos">Sin repuestos a\u00fan.</div>` : reps.map(r => {
                   const rConfirming = pendingDelete && pendingDelete.type === "repuesto" && pendingDelete.id === r.id;
                   const cl = claseById(r.claseId);
                   const isEditing = editingRepuestoId === r.id;
@@ -7141,7 +7089,7 @@
                     <button class="icon-btn danger" onclick="deleteRepuesto('${r.id}','${u.id}')" aria-label="Eliminar repuesto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z"/></svg></button>
                   `}
                 </div>`;
-                }).join("")}
+                }).join(""))}
               <div class="add-repuesto-form">
                 <input type="text" id="rep-clase-${u.id}" placeholder="Clase (ej: Rodamiento)" list="clases-list">
                 <input type="text" id="rep-marca-${u.id}" placeholder="Marca" list="marcas-list">
@@ -7352,10 +7300,14 @@
     }
     async function cargarRepuestosUnidad(unidadId) {
       try {
-        const reps = await apiFetch("/repuestos/unidad/" + unidadId);
-        repuestosCache[unidadId] = reps.map(r => ({
+        const data = await apiFetch("/repuestos/unidad/" + unidadId);
+        // El servidor marca cada repuesto según la especialidad de quien
+        // consulta, para poder mostrar primero lo suyo sin ocultarle el resto.
+        miEspecialidad = data.especialidad || null;
+        repuestosCache[unidadId] = (data.repuestos || []).map(r => ({
           id: r.id, unidadId: r.unidadId, claseId: r.claseId, marca: r.marca, modelo: r.modelo,
           descripcion: r.descripcion, cantidad: r.cantidad, codigoInterno: r.codigoInterno, codigoProveedor: r.codigoProveedor,
+          deMiEspecialidad: r.deMiEspecialidad !== false,
         }));
       } catch (e) {
         repuestosCache[unidadId] = [];
@@ -8598,6 +8550,9 @@
 
     /* ---------------- ADMIN: ASIGNAR TRABAJO ---------------- */
     let checklistDraft = [];
+    let asignarTecnicosSel = new Set(); // técnicos marcados al asignar un trabajo
+    let miEspecialidad = null;          // especialidad del técnico que consulta
+    let verTodosLosRepuestos = false;   // el filtro por especialidad no esconde: ordena
 
     function asignarError(msg) {
       const el = document.getElementById("admin-asignar-error");
@@ -8621,10 +8576,7 @@
         ? `<option value="">Sin l\u00edneas creadas</option>`
         : db.lineas.map(l => `<option value="${l.id}">${l.nombre.replace(/</g, "&lt;")}</option>`).join("");
       onAsignarLineaChange();
-      const tecSel = document.getElementById("asignar-tecnico");
-      tecSel.innerHTML = db.tecnicos.length === 0
-        ? `<option value="">Sin t\u00e9cnicos creados</option>`
-        : db.tecnicos.map(t => `<option value="${t.id}">${t.nombre.replace(/</g, "&lt;")} ${(t.apellido || "").replace(/</g, "&lt;")}</option>`).join("");
+      renderSelectorTecnicos();
       document.getElementById("asignar-fecha-inicio").value = isoDate(0);
       document.getElementById("asignar-fecha-fin").value = isoDate(1);
       document.getElementById("new-catalogo-nombre").value = "";
@@ -8790,34 +8742,71 @@
       checklistDraft[i].subtareas.splice(si, 1);
       renderChecklistDraft();
     }
+    /**
+     * Lista de técnicos con casillas: una preventiva puede asignarse a varios,
+     * y todos quedan responsables por igual — el período completo cuenta como
+     * carga para cada uno, no repartido entre ellos.
+     */
+    function renderSelectorTecnicos() {
+      const cont = document.getElementById("asignar-tecnicos");
+      if (!cont) return;
+      if (!db.tecnicos.length) {
+        cont.innerHTML = `<div class="empty-note">Sin técnicos creados. Agrégalos en "Técnicos".</div>`;
+        return;
+      }
+      cont.innerHTML = db.tecnicos.map(t => {
+        const nombre = `${t.nombre || ""} ${t.apellido || ""}`.trim().replace(/</g, "&lt;");
+        const esp = t.especialidad ? t.especialidad.nombre.replace(/</g, "&lt;") : "";
+        return `<label class="tecnico-check">
+        <input type="checkbox" value="${t.id}" ${asignarTecnicosSel.has(t.id) ? "checked" : ""} onchange="toggleTecnicoAsignado('${t.id}', this.checked)">
+        <span>${nombre}${esp ? ` <span style="color:var(--ink-60);font-size:11.5px;">· ${esp}</span>` : ""}</span>
+      </label>`;
+      }).join("");
+    }
+    function toggleTecnicoAsignado(id, marcado) {
+      if (marcado) asignarTecnicosSel.add(id); else asignarTecnicosSel.delete(id);
+      const aviso = document.getElementById("asignar-tecnicos-aviso");
+      if (aviso) {
+        aviso.textContent = asignarTecnicosSel.size > 1
+          ? `${asignarTecnicosSel.size} técnicos asignados. El período completo cuenta como carga para cada uno.`
+          : "";
+      }
+    }
     async function crearOrdenTrabajo() {
       try {
         clearAsignarError();
         const unidadId = document.getElementById("asignar-unidad").value;
-        const tecnicoId = document.getElementById("asignar-tecnico").value;
+        const tecnicoIds = [...asignarTecnicosSel];
         const fechaInicio = document.getElementById("asignar-fecha-inicio").value;
         const fechaFin = document.getElementById("asignar-fecha-fin").value;
         if (!unidadId) { asignarError("Selecciona una unidad (crea l\u00edneas y unidades primero si no hay ninguna)."); return; }
-        if (!tecnicoId) { asignarError("Selecciona un t\u00e9cnico (crea uno primero si no hay ninguno)."); return; }
+        if (!tecnicoIds.length) { asignarError("Marca al menos un t\u00e9cnico (crea uno primero si no hay ninguno)."); return; }
         if (!fechaInicio || !fechaFin) { asignarError("Selecciona fecha de inicio y de t\u00e9rmino."); return; }
         if (parseIso(fechaFin) < parseIso(fechaInicio)) { asignarError("La fecha de t\u00e9rmino no puede ser anterior a la de inicio."); return; }
         if (checklistDraft.length === 0) { asignarError("Arrastra al menos una tarea del cat\u00e1logo al checklist."); return; }
         const plantaId = getPlantaId();
         const orden = await apiFetch("/ordenes", {
           method: "POST", body: {
-            plantaId, unidadId, tecnicoId, fechaInicio, fechaFin, tipo: "preventiva",
+            plantaId, unidadId, tecnicoIds, fechaInicio, fechaFin, tipo: "preventiva",
             checklist: checklistDraft.map(c => ({ nombre: c.nombre, subtareas: c.subtareas })),
           }
         });
         db.ordenes.push({
-          id: orden.id, tipo: orden.tipo, unidadId: orden.unidadId, tecnicoId: orden.tecnicoId, estado: orden.estado,
+          id: orden.id, tipo: orden.tipo, unidadId: orden.unidadId, estado: orden.estado,
+          tecnicoIds: (orden.tecnicos || []).map(t => t.usuarioId),
+          tecnicosNombres: (orden.tecnicos || []).map(t => `${(t.usuario && t.usuario.nombre) || ""} ${(t.usuario && t.usuario.apellido) || ""}`.trim()),
           fechaInicio: orden.fechaInicio.slice(0, 10), fechaFin: orden.fechaFin.slice(0, 10), fechaCompletado: null,
           checklist: orden.checklist.map(c => ({ id: c.id, nombre: c.nombre, subtareas: c.subtareas || [], completado: false })),
           observacion: "",
         });
-        const u = unidadById(unidadId), t = db.tecnicos.find(x => x.id === tecnicoId);
+        const u = unidadById(unidadId);
+        const nombres = tecnicoIds.map(id => (db.tecnicos.find(x => x.id === id) || {}).nombre).filter(Boolean);
         renderOrdenesAsignadas();
-        asignarSuccess(`Trabajo asignado a ${t.nombre} en "${u.nombre}".`);
+        asignarSuccess(nombres.length > 1
+          ? `Trabajo asignado a ${nombres.length} técnicos en "${u.nombre}". El período completo cuenta para cada uno.`
+          : `Trabajo asignado a ${nombres[0] || "el técnico"} en "${u.nombre}".`);
+        asignarTecnicosSel.clear();
+        renderSelectorTecnicos();
         checklistDraft = [];
         renderChecklistDraft();
       } catch (e) { asignarError("No se pudo crear la orden: " + e.message); }
@@ -8833,10 +8822,16 @@
         const oConfirming = pendingDelete && pendingDelete.type === "orden" && pendingDelete.id === o.id;
         const u = unidadById(o.unidadId);
         const l = u ? lineaById(u.lineaId) : null;
-        const t = db.tecnicos.find(x => x.id === o.tecnicoId);
+        // Una preventiva puede ir a varios técnicos; se muestran todos.
+        const nombresAsignados = (o.tecnicosNombres && o.tecnicosNombres.length)
+          ? o.tecnicosNombres
+          : (o.tecnicoIds || []).map(id => {
+              const x = db.tecnicos.find(y => y.id === id);
+              return x ? `${x.nombre} ${x.apellido || ""}`.trim() : null;
+            }).filter(Boolean);
         return `<div class="orden-row">
       <div class="info">
-        <strong>${formatFolio("P", db.config.plantaNumero, o.folio) ? formatFolio("P", db.config.plantaNumero, o.folio) + " \u00b7 " : ""}${(t ? t.nombre + " " + (t.apellido || "") : "T\u00e9cnico eliminado").replace(/</g, "&lt;")}</strong> \u2192 ${(u ? u.nombre : "Unidad eliminada").replace(/</g, "&lt;")} ${l ? "(" + l.nombre.replace(/</g, "&lt;") + ")" : ""}
+        <strong>${formatFolio("P", db.config.plantaNumero, o.folio) ? formatFolio("P", db.config.plantaNumero, o.folio) + " \u00b7 " : ""}${(nombresAsignados.length ? nombresAsignados.join(", ") : "T\u00e9cnico eliminado").replace(/</g, "&lt;")}</strong> \u2192 ${(u ? u.nombre : "Unidad eliminada").replace(/</g, "&lt;")} ${l ? "(" + l.nombre.replace(/</g, "&lt;") + ")" : ""}
         <span>${o.fechaInicio} \u2192 ${o.fechaFin} \u00b7 ${formatVence(o)} \u00b7 ${o.checklist.length} tarea(s)</span>
       </div>
       ${oConfirming ? `
@@ -9627,7 +9622,8 @@
         <div class="row">
           <div style="flex:1;min-width:130px;">
             <label>Técnico</label>
-            <select id="asignar-tecnico"></select>
+            <div id="asignar-tecnicos" class="tecnicos-check-list"></div>
+            <div id="asignar-tecnicos-aviso" style="font-size:12px;color:var(--ink-60);margin-top:5px;"></div>
           </div>
         </div>
         <div class="row">
