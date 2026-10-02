@@ -8295,107 +8295,195 @@
         generarPdfRepuestos(data, logoDataUrl);
       } catch (e) { configError("No se pudo generar el reporte: " + e.message); }
     }
+    /**
+     * PDF de repuestos, con el mismo lenguaje visual que el de los formularios
+     * de inocuidad: banda de encabezado con logo, tarjetas de resumen y tablas
+     * en columnas. Antes era texto corrido con viñetas, que para cotizar
+     * obligaba a leer línea por línea buscando el total.
+     *
+     * El orden responde a cómo se usa: primero lo que se compra (consolidado
+     * por línea, que es el nivel al que trabaja el técnico), después el total
+     * de planta (el nivel de una orden de compra) y al final el detalle de qué
+     * lleva cada máquina, que se consulta pero no se cotiza.
+     */
     function generarPdfRepuestos(data, logoDataUrl) {
       const jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
       if (!jsPDFCtor) { configError("No se pudo cargar el generador de PDF. Revisa tu conexión e inténtalo de nuevo."); return; }
       const doc = new jsPDFCtor();
-      const margenX = 14;
-      let y = 18;
-      if (logoDataUrl) {
-        try {
-          const formato = /^data:image\/png/i.test(logoDataUrl) ? "PNG" : /^data:image\/webp/i.test(logoDataUrl) ? "WEBP" : "JPEG";
-          doc.addImage(logoDataUrl, formato, 178, 10, 18, 18);
-        } catch (e) { /* formato no compatible: seguimos sin logo */ }
-      }
-      doc.setFontSize(14);
-      doc.text(`Repuestos por línea · ${data.plantaNombre || ""}`, margenX, y);
-      y += 6;
-      doc.setFontSize(10);
-      doc.text(`${data.clienteNombre || ""} · Generado ${new Date(data.generadoAt).toLocaleDateString("es-CL")}`, margenX, y);
-      y += 10;
-      /**
-       * Bloque consolidado: cada repuesto una sola vez, con su total y el
-       * detalle de en qué unidades se usa. Es lo que sirve para cotizar y
-       * comprar; el desglose por unidad de más arriba sirve para saber qué
-       * lleva cada máquina.
-       */
-      function escribirConsolidado(titulo, lista, sangria) {
-        if (!lista || !lista.length) return;
-        if (y > 260) { doc.addPage(); y = 18; }
-        if (titulo) {
-          doc.setFontSize(11);
-          doc.setFont(undefined, "bold");
-          doc.text(titulo, margenX + sangria, y);
-          doc.setFont(undefined, "normal");
-          y += 6;
-        }
-        doc.setFontSize(9);
-        lista.forEach((r) => {
-          if (y > 275) { doc.addPage(); y = 18; }
-          const nombrePieza = [r.clase, r.marca, r.modelo, r.descripcion].filter(Boolean).join(" · ") || "(sin datos)";
-          const codigos = [r.codigoInterno ? "Cód. interno: " + r.codigoInterno : "", r.codigoProveedor ? "Cód. proveedor: " + r.codigoProveedor : ""].filter(Boolean).join(" · ");
-          doc.setFont(undefined, "bold");
-          doc.text(`TOTAL ${r.total}`, margenX + sangria + 4, y);
-          doc.setFont(undefined, "normal");
-          doc.text(`${nombrePieza}${codigos ? " — " + codigos : ""}`, margenX + sangria + 24, y);
-          y += 4.5;
-          const detalle = (r.unidades || []).map((u) => `${u.nombre}: ${u.cantidad}`).join("   ");
-          doc.splitTextToSize(detalle, 165 - sangria).forEach((linea) => {
-            if (y > 282) { doc.addPage(); y = 18; }
-            doc.setTextColor(110);
-            doc.text(linea, margenX + sangria + 24, y);
-            doc.setTextColor(0);
-            y += 4.5;
-          });
-          y += 1.5;
-        });
-        y += 4;
-      }
 
       const lineas = data.lineas || [];
-      if (!lineas.length) {
-        doc.text("No hay líneas registradas en esta planta.", margenX, y);
-      }
-      lineas.forEach((linea) => {
-        if (y > 275) { doc.addPage(); y = 18; }
-        doc.setFontSize(12);
-        doc.text(linea.nombre || "-", margenX, y);
-        y += 6;
-        doc.setFontSize(9);
-        (linea.unidades || []).forEach((u) => {
-          if (y > 280) { doc.addPage(); y = 18; }
-          doc.setFont(undefined, "bold");
-          doc.text(u.nombre || "-", margenX + 4, y);
-          doc.setFont(undefined, "normal");
-          y += 5;
-          if (!u.repuestos || !u.repuestos.length) {
-            doc.text("Sin repuestos registrados.", margenX + 8, y);
-            y += 5;
-          } else {
-            u.repuestos.forEach((r) => {
-              if (y > 280) { doc.addPage(); y = 18; }
-              const partes = [r.clase, r.marca, r.modelo, r.descripcion].filter(Boolean).join(" · ");
-              const codigos = [r.codigoInterno ? "Cód. interno: " + r.codigoInterno : "", r.codigoProveedor ? "Cód. proveedor: " + r.codigoProveedor : ""].filter(Boolean).join(" · ");
-              doc.text(`• ${partes || "(sin datos)"} — cantidad: ${r.cantidad}${codigos ? " — " + codigos : ""}`, margenX + 8, y);
-              y += 5;
-            });
-          }
-        });
-        y += 2;
-        escribirConsolidado(`Consolidado · ${linea.nombre || "línea"}`, linea.consolidado, 4);
+      const consolidadoPlanta = data.consolidadoPlanta || [];
+      const fecha = new Date(data.generadoAt || Date.now());
+      const fechaTexto = fecha.toLocaleDateString("es-CL");
+      const totalPiezas = consolidadoPlanta.reduce((n, r) => n + (r.total || 0), 0);
+      const totalUnidades = lineas.reduce((n, l) => n + (l.unidades || []).length, 0);
+
+      let y = bandaEncabezadoPdf(doc, {
+        logoDataUrl,
+        cliente: data.clienteNombre,
+        titulo: `Repuestos · ${data.plantaNombre || ""}`,
+        metaDerecha: [`Generado ${fechaTexto}`, `${lineas.length} línea${lineas.length === 1 ? "" : "s"} · ${totalUnidades} unidad${totalUnidades === 1 ? "" : "es"}`],
       });
 
-      if ((data.consolidadoPlanta || []).length) {
+      // Tarjetas de resumen: lo que alguien mira antes de leer nada.
+      const anchoTarjeta = (PDF_ANCHO - 8) / 3;
+      const tarjetas = [
+        { n: String(consolidadoPlanta.length), l: "Repuestos distintos" },
+        { n: String(totalPiezas), l: "Piezas en total" },
+        { n: String(lineas.length), l: lineas.length === 1 ? "Línea" : "Líneas" },
+      ];
+      tarjetas.forEach((t, i) => {
+        const x = PDF_X + i * (anchoTarjeta + 4);
+        doc.setFillColor(...GRIS_CLARO);
+        doc.rect(x, y, anchoTarjeta, 17, "F");
+        doc.setFontSize(15);
+        doc.setFont(undefined, "bold");
+        doc.text(t.n, x + 4, y + 8);
+        doc.setFont(undefined, "normal");
+        doc.setFontSize(7.5);
+        doc.setTextColor(106);
+        doc.text(t.l, x + 4, y + 13.5);
+        doc.setTextColor(20);
+      });
+      y += 25;
+
+      const COLUMNAS_CONSOLIDADO = [
+        { ancho: 18, alinear: "center" },
+        { ancho: 54 },
+        { ancho: 44 },
+        { ancho: 66 },
+      ];
+
+      function tituloSeccion(texto, bajada) {
+        if (y > 250) { doc.addPage(); y = 18; }
+        doc.setFontSize(11);
+        doc.setFont(undefined, "bold");
+        doc.text(texto, PDF_X, y);
+        doc.setFont(undefined, "normal");
+        y += bajada ? 5 : 6;
+        if (bajada) {
+          doc.setFontSize(8);
+          doc.setTextColor(106);
+          doc.text(bajada, PDF_X, y);
+          doc.setTextColor(20);
+          y += 5;
+        }
+      }
+
+      /** Tabla de un consolidado: una fila por repuesto, con su total. */
+      function tablaConsolidado(lista) {
+        const encabezado = {
+          negrita: true, fondo: GRIS_CLARO, tam: 8,
+          celdas: ["TOTAL", "Familia y marca", "Códigos", "Dónde se usa"],
+        };
+        const filas = lista.map((r) => {
+          const pieza = [r.clase, r.marca, r.modelo, r.descripcion].filter(Boolean).join(" · ") || "(sin datos)";
+          const codigos = [
+            r.codigoInterno ? "Int. " + r.codigoInterno : "",
+            r.codigoProveedor ? "Prov. " + r.codigoProveedor : "",
+          ].filter(Boolean).join("\n") || "—";
+          const donde = (r.unidades || []).map((u) => `${u.nombre} (${u.cantidad})`).join(", ") || "—";
+          return {
+            celdas: [
+              { texto: String(r.total), negrita: true, tam: 10 },
+              pieza,
+              { texto: codigos, tam: 7.5, color: [106, 106, 106] },
+              { texto: donde, tam: 7.5, color: [106, 106, 106] },
+            ],
+          };
+        });
+        y = tablaPdf(doc, y, COLUMNAS_CONSOLIDADO, [encabezado, ...filas]);
+        y += 7;
+      }
+
+      if (!lineas.length) {
+        doc.setFontSize(9.5);
+        doc.setTextColor(106);
+        doc.text("Esta planta todavía no tiene líneas registradas, así que no hay repuestos que consolidar.", PDF_X, y);
+        doc.setTextColor(20);
+      }
+
+      // 1. Consolidado por línea — el nivel al que trabaja el técnico.
+      lineas.forEach((linea) => {
+        const consolidado = linea.consolidado || [];
+        tituloSeccion(
+          `Consolidado · ${linea.nombre || "línea"}`,
+          `${consolidado.length} repuesto${consolidado.length === 1 ? "" : "s"} distinto${consolidado.length === 1 ? "" : "s"} en ${(linea.unidades || []).length} unidad${(linea.unidades || []).length === 1 ? "" : "es"}`
+        );
+        if (!consolidado.length) {
+          doc.setFontSize(8.5);
+          doc.setTextColor(106);
+          doc.text("Sin repuestos cargados en esta línea.", PDF_X, y);
+          doc.setTextColor(20);
+          y += 9;
+          return;
+        }
+        tablaConsolidado(consolidado);
+      });
+
+      // 2. Consolidado de planta — el nivel de una orden de compra.
+      if (consolidadoPlanta.length) {
         doc.addPage();
         y = 18;
-        doc.setFontSize(14);
-        doc.text(`Consolidado de toda la planta · ${data.plantaNombre || ""}`, margenX, y);
-        y += 6;
-        doc.setFontSize(10);
-        doc.text("Totales para cotizar y generar la orden de compra.", margenX, y);
-        y += 10;
-        escribirConsolidado("", data.consolidadoPlanta, 0);
+        tituloSeccion(
+          `Consolidado de toda la planta · ${data.plantaNombre || ""}`,
+          "Totales para cotizar y generar la orden de compra."
+        );
+        tablaConsolidado(consolidadoPlanta);
       }
+
+      // 3. Detalle por máquina — se consulta, no se cotiza.
+      if (lineas.length) {
+        doc.addPage();
+        y = 18;
+        tituloSeccion("Detalle por unidad", "Qué repuesto lleva cada máquina.");
+        const columnasDetalle = [
+          { ancho: 60 },
+          { ancho: 48 },
+          { ancho: 16, alinear: "center" },
+          { ancho: 58 },
+        ];
+        lineas.forEach((linea) => {
+          (linea.unidades || []).forEach((u) => {
+            const repuestos = u.repuestos || [];
+            const filas = [{
+              anchoCompleto: true, fondo: GRIS_CLARO, tam: 8.5,
+              texto: `${linea.nombre || "-"} · ${u.nombre || "-"}`,
+            }];
+            if (!repuestos.length) {
+              filas.push({ anchoCompleto: true, tam: 8, color: [106, 106, 106], texto: "Sin repuestos registrados." });
+            } else {
+              filas.push({
+                negrita: true, fondo: GRIS_MUY_CLARO, tam: 7.5,
+                celdas: ["Familia y marca", "Descripción", "Cant.", "Códigos"],
+              });
+              repuestos.forEach((r) => {
+                filas.push({
+                  celdas: [
+                    [r.clase, r.marca, r.modelo].filter(Boolean).join(" · ") || "(sin datos)",
+                    { texto: r.descripcion || "—", tam: 8 },
+                    { texto: String(r.cantidad), negrita: true },
+                    {
+                      texto: [
+                        r.codigoInterno ? "Int. " + r.codigoInterno : "",
+                        r.codigoProveedor ? "Prov. " + r.codigoProveedor : "",
+                      ].filter(Boolean).join("\n") || "—",
+                      tam: 7.5, color: [106, 106, 106],
+                    },
+                  ],
+                });
+              });
+            }
+            y = tablaPdf(doc, y, columnasDetalle, filas);
+            y += 5;
+          });
+        });
+      }
+
+      pieDePaginaPdf(doc, [
+        `${data.clienteNombre || ""} · ${data.plantaNombre || ""} · Repuestos al ${fechaTexto}`,
+        "Catálogo de repuestos registrados. No refleja consumo ni existencias en bodega.",
+      ]);
 
       const nombreArchivo = `repuestos-${(data.plantaNombre || "planta").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.pdf`;
       doc.save(nombreArchivo);
