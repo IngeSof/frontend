@@ -1758,6 +1758,111 @@
       line-height: 1.5;
     }
 
+    .clases-catalogo {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 13px 15px 15px;
+      margin-bottom: 16px;
+      background: var(--white);
+    }
+
+    .clases-catalogo-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13.5px;
+    }
+
+    .clases-cat-link {
+      background: none;
+      border: none;
+      padding: 0;
+      font-family: inherit;
+      font-size: 12.5px;
+      color: var(--ink-60);
+      text-decoration: underline;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .clases-catalogo-sub {
+      font-size: 12px;
+      color: var(--ink-60);
+      line-height: 1.45;
+      margin: 5px 0 11px;
+    }
+
+    .clases-catalogo-form {
+      display: flex;
+      gap: 9px;
+      align-items: flex-end;
+    }
+
+    .clases-catalogo-form textarea {
+      flex: 1;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      line-height: 1.45;
+      resize: vertical;
+      background: var(--white);
+      color: var(--black);
+    }
+
+    .clase-cat-fila {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .clase-cat-fila:last-child { border-bottom: none; }
+
+    .clase-cat-fila input {
+      flex: 1;
+      min-width: 110px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 5px 8px;
+      font-size: 13px;
+      font-family: inherit;
+      background: transparent;
+      color: var(--black);
+    }
+
+    .clase-cat-fila input:hover { border-color: var(--line); }
+    .clase-cat-fila input:focus { border-color: #C9C6BD; background: var(--white); outline: none; }
+    .clase-cat-fila input:disabled { color: var(--ink-60); }
+
+    .clase-cat-uso {
+      font-size: 11.5px;
+      color: var(--ink-60);
+      white-space: nowrap;
+    }
+
+    .clase-cat-general {
+      font-size: 10.5px;
+      background: #F3F2EE;
+      color: var(--ink-60);
+      padding: 2px 8px;
+      border-radius: 100px;
+      white-space: nowrap;
+    }
+
+    .clases-cat-cabecera {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 13px 0 4px;
+      font-size: 11.5px;
+      color: var(--ink-60);
+    }
+
     /* Aviso de clases nuevas que nadie asignó: sin esto se pierden entre los
        cientos de botones apagados y quedan sin especialidad para siempre. */
     .clases-esp-aviso {
@@ -7318,8 +7423,21 @@
       </div>
     </div>`;
       }).join("");
+      actualizarDatalistClases();
+    }
+
+    /**
+     * Sugerencias de familia al cargar un repuesto. Se refresca cada vez que
+     * cambia el catálogo: si no, el jefe agrega "Prensaestopa" y al rato no le
+     * aparece sugerida, vuelve a escribirla distinto y terminan dos familias
+     * para la misma cosa.
+     */
+    function actualizarDatalistClases() {
       const dl = document.getElementById("clases-list");
-      if (dl) dl.innerHTML = db.clasesRepuesto.map(c => `<option value="${c.nombre.replace(/"/g, '&quot;')}">`).join("");
+      if (!dl) return;
+      dl.innerHTML = (db.clasesRepuesto || []).slice()
+        .sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "", "es"))
+        .map(c => `<option value="${(c.nombre || "").replace(/"/g, '&quot;')}">`).join("");
     }
     /**
      * Carga las marcas y modelos ya usados en la planta para sugerirlos al
@@ -8559,6 +8677,11 @@
       // abre la ventana mostrando tres clases y parece que se perdió el resto.
       clasesEspBusqueda = "";
       clasesEspSoloSinAsignar = false;
+      catalogoClasesAbierto = false;
+      const botonCatalogo = document.getElementById("clases-cat-toggle");
+      if (botonCatalogo) botonCatalogo.textContent = "Ver y editar";
+      const nuevasClases = document.getElementById("clases-nuevas");
+      if (nuevasClases) nuevasClases.value = "";
       const buscarClase = document.getElementById("clases-esp-buscar");
       if (buscarClase) buscarClase.value = "";
       const soloSinAsignar = document.getElementById("clases-esp-solo");
@@ -8631,11 +8754,113 @@
       }
       const dl = document.getElementById("especialidades-list");
       if (dl) dl.innerHTML = db.especialidades.map(e => `<option value="${e.nombre.replace(/"/g, '&quot;')}">`).join("");
+      renderCatalogoClases();
       renderClasesEspecialidades();
     }
 
     let clasesEspBusqueda = "";
     let clasesEspSoloSinAsignar = false;
+    let catalogoClasesAbierto = false;
+
+    function alternarCatalogoClases() {
+      catalogoClasesAbierto = !catalogoClasesAbierto;
+      const boton = document.getElementById("clases-cat-toggle");
+      if (boton) boton.textContent = catalogoClasesAbierto ? "Ocultar" : "Ver y editar";
+      renderCatalogoClases();
+    }
+
+    /**
+     * Lista editable de las familias de repuesto. Se muestra plegada porque con
+     * cincuenta familias ocupa toda la pantalla, pero tiene que existir: antes
+     * las clases solo nacían de rebote al escribir un nombre nuevo cargando un
+     * repuesto, y así no hay manera de montar el catálogo de una planta.
+     */
+    function renderCatalogoClases() {
+      const cont = document.getElementById("clases-catalogo-lista");
+      if (!cont) return;
+      if (!catalogoClasesAbierto) { cont.style.display = "none"; cont.innerHTML = ""; return; }
+      cont.style.display = "block";
+      const clases = (db.clasesRepuesto || []).slice()
+        .sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "", "es"));
+      if (!clases.length) {
+        cont.innerHTML = `<div class="clases-cat-cabecera"><span>Todavía no hay familias cargadas.</span></div>`;
+        return;
+      }
+      cont.innerHTML = `<div class="clases-cat-cabecera"><span>${clases.length} familia${clases.length === 1 ? "" : "s"}</span><span>Toca el nombre para corregirlo</span></div>` +
+        clases.map(c => {
+          const usos = (c.repuestosCount || 0) + (c.plantillasCount || 0);
+          // Las familias del catálogo general de Ingenova las comparten todos
+          // los clientes, así que desde aquí no se tocan.
+          const general = c.clienteId === null;
+          return `<div class="clase-cat-fila">
+        <input type="text" value="${(c.nombre || "").replace(/"/g, "&quot;")}" ${general ? "disabled" : ""}
+          onchange="renombrarClase('${c.id}', this.value, this)">
+        ${general ? `<span class="clase-cat-general">catálogo general</span>` : ""}
+        <span class="clase-cat-uso">${usos ? usos + (usos === 1 ? " repuesto" : " repuestos") : "sin uso"}</span>
+        ${general || usos ? "" : `<button class="icon-btn danger" onclick="eliminarClase('${c.id}')" aria-label="Eliminar familia"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z"/></svg></button>`}
+      </div>`;
+        }).join("");
+    }
+
+    /** Carga varias familias de una vez, una por línea. */
+    async function agregarClasesEnLote() {
+      const campo = document.getElementById("clases-nuevas");
+      if (!campo) return;
+      const nombres = campo.value.split(/[\n;]+/).map(n => n.trim()).filter(Boolean);
+      if (!nombres.length) { tecAdminError("Escribe al menos una familia, una por línea."); return; }
+      try {
+        clearTecAdminError();
+        const r = await apiFetch("/catalogos/clases-repuesto/lote", { method: "POST", body: { nombres } });
+        db.clasesRepuesto = r.clases || db.clasesRepuesto;
+        campo.value = "";
+        repuestosCache = {};
+        renderCatalogoClases();
+        renderClasesEspecialidades();
+        actualizarDatalistClases();
+        const repetidas = r.repetidas || [];
+        const partes = [];
+        if (r.creadas) partes.push(`${r.creadas} familia${r.creadas === 1 ? "" : "s"} agregada${r.creadas === 1 ? "" : "s"}`);
+        if (repetidas.length) partes.push(`${repetidas.length} ya existía${repetidas.length === 1 ? "" : "n"} (${repetidas.slice(0, 3).join(", ")}${repetidas.length > 3 ? "…" : ""})`);
+        tecAdminSuccess(partes.join(" · ") || "No se agregó ninguna.");
+      } catch (e) {
+        tecAdminError("No se pudieron agregar las familias: " + e.message);
+      }
+    }
+
+    async function renombrarClase(claseId, nombre, campo) {
+      const clase = (db.clasesRepuesto || []).find(c => c.id === claseId);
+      if (!clase) return;
+      const limpio = (nombre || "").trim();
+      if (!limpio || limpio === clase.nombre) { if (campo) campo.value = clase.nombre; return; }
+      try {
+        clearTecAdminError();
+        await apiFetch("/catalogos/clases-repuesto/" + claseId, { method: "PATCH", body: { nombre: limpio } });
+        clase.nombre = limpio;
+        repuestosCache = {};
+        renderCatalogoClases();
+        renderClasesEspecialidades();
+        actualizarDatalistClases();
+      } catch (e) {
+        if (campo) campo.value = clase.nombre;
+        tecAdminError("No se pudo renombrar: " + e.message);
+      }
+    }
+
+    async function eliminarClase(claseId) {
+      const clase = (db.clasesRepuesto || []).find(c => c.id === claseId);
+      if (!clase) return;
+      try {
+        clearTecAdminError();
+        await apiFetch("/catalogos/clases-repuesto/" + claseId, { method: "DELETE" });
+        db.clasesRepuesto = db.clasesRepuesto.filter(c => c.id !== claseId);
+        repuestosCache = {};
+        renderCatalogoClases();
+        renderClasesEspecialidades();
+        actualizarDatalistClases();
+      } catch (e) {
+        tecAdminError("No se pudo eliminar: " + e.message);
+      }
+    }
 
     function filtrarClasesEspecialidades(texto) {
       clasesEspBusqueda = (texto || "").trim().toLowerCase();
@@ -9948,6 +10173,18 @@
         <div class="clases-esp-explica">
           <span class="ico">i</span>
           <p>Cuando un técnico abre una unidad, arriba le aparecen los repuestos de su especialidad y abajo el resto. <strong>Nadie deja de ver nada</strong> — solo cambia el orden, para que no tenga que buscar entre cientos de piezas la que le toca.</p>
+        </div>
+        <div class="clases-catalogo">
+          <div class="clases-catalogo-top">
+            <strong>Catálogo de familias</strong>
+            <button type="button" class="clases-cat-link" id="clases-cat-toggle" onclick="alternarCatalogoClases()">Ver y editar</button>
+          </div>
+          <p class="clases-catalogo-sub">Carga acá las familias de repuesto de la planta: Contactores, Motorreductor, PLC, Rodamiento… Una por línea; puedes pegar una lista entera de una vez. Las variantes —bobina de 220, relación de reducción, marca del PLC— no son familias: esas van en cada repuesto.</p>
+          <div class="clases-catalogo-form">
+            <textarea id="clases-nuevas" rows="3" placeholder="Contactores&#10;Motorreductor&#10;PLC&#10;Rodamiento"></textarea>
+            <button type="button" class="add-btn" onclick="agregarClasesEnLote()">+ Agregar</button>
+          </div>
+          <div id="clases-catalogo-lista" style="display:none;"></div>
         </div>
         <div id="clases-esp-aviso"></div>
         <div class="clases-esp-toolbar">
