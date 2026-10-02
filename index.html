@@ -1726,53 +1726,134 @@
       margin: 0 0 4px;
     }
 
-    .clases-esp-hint {
-      font-size: 12px;
-      color: var(--ink-60);
-      margin: 0 0 12px;
-      line-height: 1.45;
+    .clases-esp-explica {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      background: var(--green-bg);
+      border-radius: 11px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
     }
 
-    .clase-esp-row {
+    .clases-esp-explica .ico {
+      flex-shrink: 0;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--green);
+      color: #fff;
+      font-size: 11.5px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1px;
+    }
+
+    .clases-esp-explica p {
+      margin: 0;
+      font-size: 12.5px;
+      color: #17694A;
+      line-height: 1.5;
+    }
+
+    /* Aviso de clases nuevas que nadie asignó: sin esto se pierden entre los
+       cientos de botones apagados y quedan sin especialidad para siempre. */
+    .clases-esp-aviso {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 8px 14px;
-      padding: 9px 11px;
+      gap: 8px 12px;
+      background: var(--amber-bg);
+      color: var(--amber-ink);
+      font-size: 12.5px;
+      border-radius: 11px;
+      padding: 11px 14px;
+      margin-bottom: 14px;
+    }
+
+    .clases-esp-aviso button {
+      background: var(--amber-ink);
+      color: #fff;
+      border: none;
+      border-radius: 100px;
+      padding: 5px 13px;
+      font-size: 11.5px;
+      font-weight: 650;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .clases-esp-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 16px;
+      margin-bottom: 12px;
+    }
+
+    .clases-esp-toolbar input[type="text"] {
+      flex: 1;
+      min-width: 180px;
       border: 1px solid var(--line);
       border-radius: 10px;
-      margin-bottom: 7px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: inherit;
       background: var(--white);
     }
 
-    .clase-esp-row .clase-nombre {
-      font-size: 13px;
-      font-weight: 600;
-      min-width: 140px;
-      flex: 1;
-    }
-
-    .clase-esp-row .clase-esp-opciones {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px 14px;
-    }
-
-    .clase-esp-opt {
+    .clases-esp-solo {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
       font-size: 12.5px;
-      cursor: pointer;
-    }
-
-    .clase-esp-opt input { width: 15px; height: 15px; flex-shrink: 0; cursor: pointer; }
-
-    .clase-esp-todas {
-      font-size: 11.5px;
       color: var(--ink-60);
-      font-style: italic;
+      cursor: pointer;
+      white-space: nowrap;
     }
+
+    .clases-esp-solo input { width: 15px; height: 15px; cursor: pointer; }
+
+    .esp-card {
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 9px;
+    }
+
+    .esp-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .esp-card-nombre { font-size: 13.5px; font-weight: 650; }
+    .esp-card-cuenta { font-size: 11.5px; color: var(--ink-60); white-space: nowrap; }
+
+    .esp-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+
+    .esp-chip {
+      border: 1px solid var(--line);
+      background: var(--white);
+      border-radius: 100px;
+      padding: 5px 13px;
+      font-size: 12.5px;
+      font-family: inherit;
+      color: var(--ink-60);
+      cursor: pointer;
+      transition: background .12s, border-color .12s, color .12s;
+    }
+
+    .esp-chip:hover { border-color: #C9C6BD; }
+    .esp-chip.on { background: var(--black); border-color: var(--black); color: #fff; font-weight: 600; }
+    .esp-chip:disabled { opacity: .5; cursor: progress; }
+
+    .esp-chips-vacio { font-size: 12px; color: var(--ink-60); font-style: italic; }
 
     /* ---------- Formularios de inocuidad ---------- */
     .admin-btn-badge {
@@ -8474,6 +8555,14 @@
         const el = document.getElementById(id);
         if (el) el.value = "";
       });
+      // El buscador y el filtro de clases arrancan limpios cada vez: si no, se
+      // abre la ventana mostrando tres clases y parece que se perdió el resto.
+      clasesEspBusqueda = "";
+      clasesEspSoloSinAsignar = false;
+      const buscarClase = document.getElementById("clases-esp-buscar");
+      if (buscarClase) buscarClase.value = "";
+      const soloSinAsignar = document.getElementById("clases-esp-solo");
+      if (soloSinAsignar) soloSinAsignar.checked = false;
       renderAdminTec();
       document.getElementById("admin-tec-overlay").classList.add("open");
     }
@@ -8545,49 +8634,116 @@
       renderClasesEspecialidades();
     }
 
+    let clasesEspBusqueda = "";
+    let clasesEspSoloSinAsignar = false;
+
+    function filtrarClasesEspecialidades(texto) {
+      clasesEspBusqueda = (texto || "").trim().toLowerCase();
+      renderClasesEspecialidades();
+    }
+    function alternarSoloSinAsignar(activo) {
+      clasesEspSoloSinAsignar = !!activo;
+      renderClasesEspecialidades();
+    }
+    /** Desde el aviso ámbar: deja a la vista solo las clases que nadie asignó. */
+    function verClasesSinAsignar() {
+      const check = document.getElementById("clases-esp-solo");
+      if (check) check.checked = true;
+      const buscar = document.getElementById("clases-esp-buscar");
+      if (buscar) buscar.value = "";
+      clasesEspBusqueda = "";
+      alternarSoloSinAsignar(true);
+    }
+
     /**
-     * Qué especialidades trabajan cada clase de repuesto. No se oculta nada a
-     * nadie: esto solo define qué ve primero cada técnico al abrir una unidad.
-     * Una clase sin marcar se considera de todos.
+     * Qué clases de repuesto trabaja cada especialidad.
+     *
+     * Se recorre por especialidad y no por clase a propósito: las
+     * especialidades son pocas y estables (seis, ocho), mientras que las
+     * clases crecen sin techo a medida que se cargan unidades. Una lista por
+     * clase se volvería inmanejable en meses; seis tarjetas fijas, no.
+     *
+     * Ojo con la distinción: la clase es la FAMILIA (Contactores, PLC,
+     * Motorreductor), no la variante. El contactor de bobina 24 y el de 220
+     * son dos repuestos de la misma clase, así que marcar "Contactores" una
+     * vez cubre a todos los que vengan después.
      */
     function renderClasesEspecialidades() {
       const cont = document.getElementById("clases-esp-list");
       if (!cont) return;
-      const clases = (db.clasesRepuesto || []).slice().sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
-      const especialidades = db.especialidades || [];
+      const aviso = document.getElementById("clases-esp-aviso");
+      const todasLasClases = (db.clasesRepuesto || []).slice()
+        .sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "", "es"));
+      const especialidades = (db.especialidades || []).slice()
+        .sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "", "es"));
+
+      if (aviso) aviso.innerHTML = "";
       if (!especialidades.length) {
-        cont.innerHTML = `<div class="empty-note">Primero crea al menos una especialidad asignándosela a un técnico.</div>`;
+        cont.innerHTML = `<div class="empty-note">Primero crea una especialidad: se crean solas al escribirlas en la ficha de un técnico.</div>`;
         return;
       }
-      if (!clases.length) {
-        cont.innerHTML = `<div class="empty-note">Todavía no hay clases de repuesto cargadas.</div>`;
+      if (!todasLasClases.length) {
+        cont.innerHTML = `<div class="empty-note">Todavía no hay clases de repuesto cargadas. Aparecen solas a medida que cargas repuestos en las unidades.</div>`;
         return;
       }
-      cont.innerHTML = clases.map(c => {
-        const marcadas = c.especialidadIds || [];
-        return `<div class="clase-esp-row">
-      <span class="clase-nombre">${(c.nombre || "-").replace(/</g, "&lt;")}</span>
-      <span class="clase-esp-opciones">${especialidades.map(e => `
-        <label class="clase-esp-opt">
-          <input type="checkbox" ${marcadas.includes(e.id) ? "checked" : ""} onchange="toggleClaseEspecialidad('${c.id}', '${e.id}')">
-          <span>${(e.nombre || "-").replace(/</g, "&lt;")}</span>
-        </label>`).join("")}</span>
-      ${marcadas.length === 0 ? `<span class="clase-esp-todas">la ven todos</span>` : ""}
+
+      // Aviso de las que nadie asignó. Sin esto, una clase nueva queda perdida
+      // entre decenas de botones apagados y nunca se le asigna especialidad.
+      const sinAsignar = todasLasClases.filter(c => !(c.especialidadIds || []).length);
+      if (aviso && sinAsignar.length && !clasesEspSoloSinAsignar) {
+        const muestra = sinAsignar.slice(0, 4).map(c => (c.nombre || "").replace(/</g, "&lt;")).join(", ");
+        aviso.className = "clases-esp-aviso";
+        aviso.innerHTML = `<span>${sinAsignar.length === 1 ? "1 clase sin asignar" : sinAsignar.length + " clases sin asignar"}: ${muestra}${sinAsignar.length > 4 ? " y " + (sinAsignar.length - 4) + " más" : ""}. Por ahora se les muestran a todos los técnicos.</span>
+      <button type="button" onclick="verClasesSinAsignar()">Ver solo esas</button>`;
+      } else if (aviso) {
+        aviso.className = "";
+      }
+
+      const visibles = todasLasClases.filter(c => {
+        if (clasesEspSoloSinAsignar && (c.especialidadIds || []).length) return false;
+        if (clasesEspBusqueda && !(c.nombre || "").toLowerCase().includes(clasesEspBusqueda)) return false;
+        return true;
+      });
+
+      cont.innerHTML = especialidades.map(e => {
+        const marcadas = todasLasClases.filter(c => (c.especialidadIds || []).includes(e.id));
+        // Dentro de cada tarjeta van primero las marcadas: con cuarenta clases,
+        // lo que ya está elegido tiene que verse sin tener que buscarlo.
+        const chips = visibles.slice().sort((a, b) => {
+          const ma = (a.especialidadIds || []).includes(e.id) ? 0 : 1;
+          const mb = (b.especialidadIds || []).includes(e.id) ? 0 : 1;
+          return ma - mb || (a.nombre || "").localeCompare(b.nombre || "", "es");
+        });
+        const cuerpo = chips.length
+          ? chips.map(c => {
+            const on = (c.especialidadIds || []).includes(e.id);
+            return `<button type="button" class="${on ? "esp-chip on" : "esp-chip"}" data-clase="${c.id}" data-esp="${e.id}"
+          onclick="toggleClaseEspecialidad('${c.id}', '${e.id}', this)">${(c.nombre || "-").replace(/</g, "&lt;")}</button>`;
+          }).join("")
+          : `<span class="esp-chips-vacio">Ninguna clase coincide con lo que buscas.</span>`;
+        return `<div class="esp-card">
+      <div class="esp-card-top">
+        <span class="esp-card-nombre">${(e.nombre || "-").replace(/</g, "&lt;")}</span>
+        <span class="esp-card-cuenta">${marcadas.length} de ${todasLasClases.length} clases</span>
+      </div>
+      <div class="esp-chips">${cuerpo}</div>
     </div>`;
       }).join("");
     }
 
-    async function toggleClaseEspecialidad(claseId, especialidadId) {
+    async function toggleClaseEspecialidad(claseId, especialidadId, boton) {
       const clase = (db.clasesRepuesto || []).find(c => c.id === claseId);
       if (!clase) return;
-      const antes = clase.especialidadIds || [];
+      const antes = (clase.especialidadIds || []).slice();
       const despues = antes.includes(especialidadId)
         ? antes.filter(id => id !== especialidadId)
         : antes.concat([especialidadId]);
-      // Se pinta de inmediato y se revierte si el servidor rechaza, para que la
-      // casilla no quede marcada mostrando algo que no se guardó.
+
+      // El botón se pinta al instante y se bloquea mientras se guarda: con una
+      // lista larga es fácil hacer tres clics seguidos y perder el hilo de cuál
+      // quedó realmente guardado.
       clase.especialidadIds = despues;
-      renderClasesEspecialidades();
+      if (boton) { boton.classList.toggle("on"); boton.disabled = true; }
       try {
         clearTecAdminError();
         await apiFetch("/catalogos/clases-repuesto/" + claseId + "/especialidades", {
@@ -8595,10 +8751,11 @@
           body: { especialidadIds: despues },
         });
         repuestosCache = {};
+        renderClasesEspecialidades();
       } catch (e) {
         clase.especialidadIds = antes;
         renderClasesEspecialidades();
-        tecAdminError("No se pudo guardar la especialidad de \"" + (clase.nombre || "") + "\": " + e.message);
+        tecAdminError("No se pudo guardar \"" + (clase.nombre || "") + "\": " + e.message);
       }
     }
     /** Traduce el resultado del envío de correo de invitación a un mensaje claro para el jefe de mantención. */
@@ -9787,8 +9944,16 @@
       <datalist id="especialidades-list"></datalist>
       <div id="admin-tec-list"></div>
       <div class="clases-esp-block">
-        <h4>Clases de repuesto por especialidad</h4>
-        <p class="clases-esp-hint">Marca qué especialidades trabajan cada clase de repuesto. Con esto, al abrir una unidad, cada técnico ve primero los repuestos que le competen. Una clase sin marcar se le muestra a todos, y nadie deja de ver el resto: solo cambia el orden.</p>
+        <h4>Qué repuestos trabaja cada especialidad</h4>
+        <div class="clases-esp-explica">
+          <span class="ico">i</span>
+          <p>Cuando un técnico abre una unidad, arriba le aparecen los repuestos de su especialidad y abajo el resto. <strong>Nadie deja de ver nada</strong> — solo cambia el orden, para que no tenga que buscar entre cientos de piezas la que le toca.</p>
+        </div>
+        <div id="clases-esp-aviso"></div>
+        <div class="clases-esp-toolbar">
+          <input type="text" id="clases-esp-buscar" placeholder="Buscar una clase de repuesto…" oninput="filtrarClasesEspecialidades(this.value)">
+          <label class="clases-esp-solo"><input type="checkbox" id="clases-esp-solo" onchange="alternarSoloSinAsignar(this.checked)"><span>Solo las sin asignar</span></label>
+        </div>
         <div id="clases-esp-list"></div>
       </div>
     </div>
